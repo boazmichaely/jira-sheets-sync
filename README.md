@@ -36,11 +36,9 @@ Uses Google Apps Script to:
 
 **Update `token.js` with your actual Jira Personal Access Token:**
 1. Go to [Jira Personal Access Tokens](https://issues.redhat.com/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens)
-2. Create token named "Google Sheets Sync"
+2. Create token named "Google Sheets Sync" 
 3. Copy the token
 4. Edit `token.js` and replace `YOUR_PERSONAL_ACCESS_TOKEN_HERE` with your actual token
-
-**⚠️ Important:** After updating with your real token, don't commit `token.js` to git
 
 ### 2. Google Sheets Setup
 
@@ -109,6 +107,6 @@ After sync, add your scoring in these columns:
 
 ## Security
 
-- Update `token.js` with your real token but don't commit it after updating
+- Update `token.js` with your real token for local use
 - The repo contains a template version with placeholder token
 - Never commit actual credentials to any repository

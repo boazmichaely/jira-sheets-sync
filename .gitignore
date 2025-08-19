@@ -97,3 +97,6 @@ Thumbs.db
 
 # Token file with real credentials - DO NOT COMMIT after updating
 # token.js
+
+# Private token files - DO NOT COMMIT
+my-token.js
