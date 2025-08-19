@@ -52,11 +52,13 @@ cp token.js my-token.js
 1. Create new Google Spreadsheet: "ROX RFE Prioritization"
 2. Import `templates/sheet-template.csv`
 3. Go to `Extensions > Apps Script`
-4. Copy files:
+4. Copy files to Apps Script:
    - `src/config.js`
    - `src/jira-sync.js` 
    - `src/helpers.js`
-   - `my-token.js` (with your real token)
+   - `my-token.js` (contains your actual token)
+
+**Note:** Both `config.js` and `my-token.js` are needed in Apps Script since config references the token.
 
 ### 3. Configure and Test
 
