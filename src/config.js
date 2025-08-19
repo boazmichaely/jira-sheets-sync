@@ -9,7 +9,7 @@
 
 // === BASIC CONFIGURATION ===
 const JIRA_BASE_URL = 'https://issues.redhat.com';
-// JIRA_TOKEN is defined in my-token.js (import that file to Apps Script)
+// JIRA_TOKEN is defined in token.js (import that file to Apps Script)
 const FILTER_ID = 12441918;
 const SHEET_NAME = 'Jira RFEs';
 

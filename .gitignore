@@ -95,5 +95,5 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Private token file - NEVER COMMIT
-my-token.js
+# Token file with real credentials - DO NOT COMMIT after updating
+# token.js

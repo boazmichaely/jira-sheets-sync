@@ -34,18 +34,13 @@ Uses Google Apps Script to:
 
 ### 1. Setup Token (Required)
 
-**Create your private token file:**
-```bash
-cp token.js my-token.js
-```
-
-**Update `my-token.js` with your actual Jira Personal Access Token:**
+**Update `token.js` with your actual Jira Personal Access Token:**
 1. Go to [Jira Personal Access Tokens](https://issues.redhat.com/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens)
 2. Create token named "Google Sheets Sync"
 3. Copy the token
-4. Edit `my-token.js` and replace `YOUR_PERSONAL_ACCESS_TOKEN_HERE` with your actual token
+4. Edit `token.js` and replace `YOUR_PERSONAL_ACCESS_TOKEN_HERE` with your actual token
 
-**⚠️ Important:** Never commit `my-token.js` to git - it's already in `.gitignore`
+**⚠️ Important:** After updating with your real token, don't commit `token.js` to git
 
 ### 2. Google Sheets Setup
 
@@ -56,9 +51,7 @@ cp token.js my-token.js
    - `src/config.js`
    - `src/jira-sync.js` 
    - `src/helpers.js`
-   - `my-token.js` (contains your actual token)
-
-**Note:** Both `config.js` and `my-token.js` are needed in Apps Script since config references the token.
+   - `token.js` (contains your actual token)
 
 ### 3. Configure and Test
 
@@ -71,9 +64,8 @@ cp token.js my-token.js
 
 ```
 ├── README.md                    # This file
-├── .gitignore                   # Git ignore (excludes my-token.js)
-├── token.js                     # Token template
-├── my-token.js                  # Your private token (not in git)
+├── .gitignore                   # Git ignore
+├── token.js                     # Your Jira token (update with real token)
 ├── src/
 │   ├── jira-sync.js            # Main sync script
 │   ├── config.js               # Configuration
@@ -117,6 +109,6 @@ After sync, add your scoring in these columns:
 
 ## Security
 
-- `my-token.js` contains sensitive data and is excluded from git
-- `token.js` is the safe template for sharing/committing
+- Update `token.js` with your real token but don't commit it after updating
+- The repo contains a template version with placeholder token
 - Never commit actual credentials to any repository
