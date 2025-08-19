@@ -28,10 +28,15 @@ function syncJiraIssues() {
     // Get or create the sheet
     const sheet = getSheet();
     
-    // Clear any filters before sync to prevent data misalignment
-    if (sheet.getFilter()) {
-      sheet.getFilter().remove();
-      Logger.log('Cleared existing filters for sync safety');
+    // Clear any active filter criteria but keep filter dropdowns
+    const filter = sheet.getFilter();
+    if (filter) {
+      // Get the filter range
+      const filterRange = filter.getRange();
+      // Remove the old filter and recreate with no criteria (keeps dropdowns)
+      filter.remove();
+      sheet.getRange(filterRange.getA1Notation()).createFilter();
+      Logger.log('Cleared filter criteria but kept filter dropdowns');
     }
     
     // Step 1: Read existing custom data before clearing
