@@ -28,6 +28,12 @@ function syncJiraIssues() {
     // Get or create the sheet
     const sheet = getSheet();
     
+    // Clear any filters before sync to prevent data misalignment
+    if (sheet.getFilter()) {
+      sheet.getFilter().remove();
+      Logger.log('Cleared existing filters for sync safety');
+    }
+    
     // Step 1: Read existing custom data before clearing
     const existingCustomData = readExistingCustomData(sheet);
     Logger.log(`Preserved custom data for ${Object.keys(existingCustomData).length} issues`);
