@@ -1,0 +1,24 @@
+RICE Framework Guidance Sheet,,,,,,,
+,,,,,,,
+Impact Mapping,,,Confidence Mapping,,,Effort Mapping,
+Impact Option,Impact Value,,Confidence Option,Confidence Value,,Effort Option,Effort Value
+Nice to have,1,,Very low,0.1,,XS,1
+Medium,3,,Low,0.25,,S,=B11*(4+1)
+High,6,,Medium,0.5,,M,=B12*(4+2)
+Must have,10,,High,0.8,,L,=B13*(4+3)
+,,,Very high,0.9,,XL,=B14*(4+4)
+,,,Certain,1,,,
+,,,,,,,
+Effort Formula Configuration,,,,,,,
+Base Value,1,,,,,,
+Formula Description,"S(n+1) = S(n) * (4 + n)",,,,,,
+,,,,,,,
+RICE Formula,,,,,,,
+"Priority Score = (Reach × Impact × Confidence) / Effort",,,,,,
+,,,,,,,
+Instructions,,,,,,,
+"1. Create named ranges for the mapping tables",,,,,,
+"2. Impact_Mapping: A4:B7",,,,,,
+"3. Confidence_Mapping: D4:E9",,,,,,
+"4. Effort_Mapping: G4:H8",,,,,,
+"5. Use these named ranges in VLOOKUP formulas",,,,,,
