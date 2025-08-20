@@ -1,24 +1,40 @@
-RICE Framework Guidance Sheet,,,,,,,
-,,,,,,,
-Impact Mapping,,,Confidence Mapping,,,Effort Mapping,
-Impact Option,Impact Value,,Confidence Option,Confidence Value,,Effort Option,Effort Value
-Nice to have,1,,Very low,0.1,,XS,1
-Medium,3,,Low,0.25,,S,=B11*(4+1)
-High,6,,Medium,0.5,,M,=B12*(4+2)
-Must have,10,,High,0.8,,L,=B13*(4+3)
-,,,Very high,0.9,,XL,=B14*(4+4)
-,,,Certain,1,,,
-,,,,,,,
-Effort Formula Configuration,,,,,,,
-Base Value,1,,,,,,
-Formula Description,"S(n+1) = S(n) * (4 + n)",,,,,,
-,,,,,,,
-RICE Formula,,,,,,,
-"Priority Score = (Reach × Impact × Confidence) / Effort",,,,,,
-,,,,,,,
-Instructions,,,,,,,
-"1. Create named ranges for the mapping tables",,,,,,
-"2. Impact_Mapping: A4:B7",,,,,,
-"3. Confidence_Mapping: D4:E9",,,,,,
-"4. Effort_Mapping: G4:H8",,,,,,
-"5. Use these named ranges in VLOOKUP formulas",,,,,,
+RICE Framework Guidance,,,,,,,,
+"RICE is a scoring model to help prioritize features and initiatives based on four factors:
+
+Reach: How many customers will this touch? (Enter as a number)
+Impact: How much impact does  this have for each customer? (Nice to have, Medium, High, Must have)
+Confidence: How confident are you in the Reach and Impact estimates?  (0-100 %)
+Effort: How much work is required to build this? (XS/S/M/L/XL/XXL)
+
+Formula: Priority Score = (Reach × Impact × Confidence) / Effort
+
+Higher scores indicate higher priority items. Use this to make data-driven decisions about what to build next.
+
+The mappings below define how text values convert to numbers for the calculation.",,,,,,,,
+,,,,,,,,
+Impact Mapping,,,Confidence Mapping,,,Effort Mapping,,(this particular formula favors smaller efforts)
+Impact Option,Impact Value,,Confidence Option,Confidence Value,,Effort Option,Effort Value,
+Nice to have,1,,Very low,10%,,XS,1,
+Medium,3,,Low,25%,,S,5,
+High,6,,Medium,50%,,M,30,
+Must have,10,,High,80%,,L,210,
+,,,Very high,90%,,XL,1680,
+,,,Certain,100%,,,,
+,,,,,,,,
+Convenience Weights,,,,,,,,
+Score,100,,,,,,,
+Reach,1,,,,,,,
+Impact,1,,,,,,,
+Confidence,1,,,,,,,
+Effort,1,,,,,,,
+,,,,,,,,
+,,,,,,,,
+Importing/Updating from Jira,,,,,,,,
+1. Open Google Apps from Extensions-->Apps Script,,,,,,,,
+2. Select the file named jira-sync.js,,,,,,,,
+3. At the bar select the fuction SyncJiraIssues from the dropdown,,,,,,,,
+4. Hit the Run button,,,,,,,,
+,,,,,,,,
+Customization,,,,,,,,
+"1. In App Script file token.js, set your Jira token",,,,,,,,
+"2. in App Script file config.js, update the FILTER ID to be used for the base query",,,,,,,,
