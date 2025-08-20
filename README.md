@@ -1,13 +1,13 @@
 # Jira to Google Sheets Sync
 
-Professional Google Apps Script solution for syncing Jira RFEs to Google Sheets with custom prioritization and ranking capabilities.
+Google Apps Script solution for syncing Jira RFEs to Google Sheets with custom prioritization and ranking capabilities.
 
 ## Problem Statement
 
 Product managers need a way to:
 1. Sync filtered Jira issues (RFEs) to Google Sheets automatically
-2. Preserve custom prioritization columns (Value, Impact, Cost)
-3. Enable weighted scoring for better priority management
+2. Preserve custom prioritization columns 
+3. Enable weighted scoring for better priority management (RICE)
 4. Maintain consistency with Jira Plan view ranking
 
 ## Solution Overview
@@ -16,7 +16,7 @@ Uses Google Apps Script to:
 - Connect to Red Hat Jira via REST API
 - Fetch issues using saved filter with Jira ranking
 - Sync data to Google Sheets while preserving custom columns
-- Enable prioritization scoring based on Value, Impact, and Cost
+- Enable prioritization scoring based on RICE
 - Handle new/deleted issues gracefully
 - Maintain user sheet ordering
 
@@ -42,10 +42,9 @@ Uses Google Apps Script to:
 
 ### 2. Google Sheets Setup
 
-1. Create new Google Spreadsheet: "ROX RFE Prioritization"
-2. Import `templates/sheet-template.csv`
-3. Go to `Extensions > Apps Script`
-4. Copy files to Apps Script:
+1. Create new Google Spreadsheet: "RFE Prioritization"
+2. Go to `Extensions > Apps Script`
+3. Copy files to Apps Script:
    - `src/config.js`
    - `src/jira-sync.js` 
    - `src/helpers.js`
@@ -56,7 +55,7 @@ Uses Google Apps Script to:
 1. Update `FILTER_ID` in `config.js` if needed
 2. Run `testConnection()` to verify setup
 3. Run `discoverFields()` to find field mappings
-4. Run `syncJiraIssues()` to sync data
+4. Run `syncJiraIssues()` to create sheet structure and sync data
 
 ## Project Structure
 
@@ -69,7 +68,8 @@ Uses Google Apps Script to:
 │   ├── config.js               # Configuration
 │   └── helpers.js              # Helper functions
 ├── templates/
-│   └── sheet-template.csv      # Google Sheet structure
+│   ├── guidance-sheet.csv      # RICE framework template
+│   └── guidance-setup-instructions.md  # RICE setup guide
 └── docs/
     └── testing-guide.md        # Testing instructions
 ```
@@ -81,15 +81,18 @@ Run `syncJiraIssues()` in Google Apps Script whenever you want to update your sh
 
 **What Gets Synced:**
 - **Columns A-L**: Jira data (replaced each sync)
-- **Columns M-P**: Your custom prioritization (preserved)
+- **Columns M+**: Custom RICE prioritization (preserved)
 
 ## Custom Prioritization Columns
 
-After sync, add your scoring in these columns:
-- **M: Value** - Business value of the feature
-- **N: Impact** - Number of customers affected  
-- **O: Cost** - Development effort (t-shirt sizing)
-- **P: Priority Score** - Your weighted calculation
+After first sync, manually add RICE scoring columns (M+):
+- **Reach** - Number of customers affected 
+- **Impact** - Business value of the feature (dropdown scale)
+- **Confidence** - Confidence in estimates (dropdown percentage) 
+- **Effort** - Development effort (dropdown t-shirt sizing)
+- **Priority Score** - Calculated RICE score
+
+See `templates/guidance-setup-instructions.md` for detailed RICE framework setup.
 
 ## Current Status
 
@@ -99,11 +102,6 @@ After sync, add your scoring in these columns:
 ✅ **Comprehensive documentation**
 
 **Ready for production use!**
-
-## Links
-
-- **Jira Filter**: https://issues.redhat.com/issues/?filter=12441918
-- **Jira Plan View**: https://issues.redhat.com/secure/PortfolioPlanView.jspa?id=2769&sid=2768&vid=15475#plan/backlog
 
 ## Security
 
