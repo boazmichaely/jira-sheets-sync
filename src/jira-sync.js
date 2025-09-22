@@ -90,7 +90,7 @@ function syncJiraIssues() {
  * Fetch issues from Jira ordered by Rank ASC
  */
 function fetchJiraIssues() {
-  const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${FILTER_ID} ORDER BY Rank ASC&maxResults=100&fields=${JIRA_FIELDS.join(',')}`;
+  const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${FILTER_ID} ORDER BY Rank ASC&maxResults=${MAX_RESULTS}&fields=${JIRA_FIELDS.join(',')}`;
   
   const response = UrlFetchApp.fetch(url, {
     headers: {
@@ -104,7 +104,7 @@ function fetchJiraIssues() {
   }
   
   const data = JSON.parse(response.getContentText());
-  Logger.log(`Fetched ${data.issues.length} issues from Jira (ordered by Rank ASC)`);
+  Logger.log(`Fetched ${data.issues.length} issues from Jira (ordered by Rank ASC, max: ${MAX_RESULTS})`);
   
   return data.issues;
 }
@@ -199,10 +199,10 @@ function readExistingCustomData(sheet) {
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1) return customData; // No data rows
     
-    const customColumnStart = JIRA_FIELDS.length + 1; // Column M (13th column)
-    const customColumnCount = 4; // Value, Impact, Cost, Priority Score
+    const customColumnStart = JIRA_FIELDS.length + 1; // Column N (14th column) 
+    const customColumnCount = 5; // Reach, Impact, Confidence, Effort, Priority Score
     
-    // Read key column (A) and custom columns (M-P)
+    // Read key column (A) and custom columns (N-R)
     const keyRange = sheet.getRange(2, 1, lastRow - 1, 1);
     const customRange = sheet.getRange(2, customColumnStart, lastRow - 1, customColumnCount);
     
@@ -218,10 +218,11 @@ function readExistingCustomData(sheet) {
         const customRow = customValues[index];
         if (customRow && customRow.some(cell => cell !== '')) {
           customData[issueKey] = {
-            value: customRow[0] || '',
+            reach: customRow[0] || '',
             impact: customRow[1] || '',
-            cost: customRow[2] || '',
-            score: customRow[3] || ''
+            confidence: customRow[2] || '',
+            effort: customRow[3] || '',
+            score: customRow[4] || ''
           };
         }
       }
@@ -309,17 +310,17 @@ function restoreCustomDataByKey(sheet, customDataMap) {
         
         const customData = customDataMap[issueKey];
         if (customData) {
-          restoreData.push([customData.value, customData.impact, customData.cost, customData.score]);
+          restoreData.push([customData.reach, customData.impact, customData.confidence, customData.effort, customData.score]);
         } else {
-          restoreData.push(['', '', '', '']); // Empty for new issues
+          restoreData.push(['', '', '', '', '']); // Empty for new issues
         }
       } else {
-        restoreData.push(['', '', '', '']);
+        restoreData.push(['', '', '', '', '']);
       }
     });
     
     if (restoreData.length > 0) {
-      sheet.getRange(2, customColumnStart, restoreData.length, 4).setValues(restoreData);
+      sheet.getRange(2, customColumnStart, restoreData.length, 5).setValues(restoreData);
       Logger.log(`Restored custom data for ${restoreData.filter(row => row.some(cell => cell !== '')).length} issues`);
     }
     
@@ -344,7 +345,7 @@ function restoreCustomDataByKey(sheet, customDataMap) {
       
       if (response.getResponseCode() === 200) {
         const data = JSON.parse(response.getContentText());
-        Logger.log(`✅ Connection successful! Found ${data.total} issues in filter`);
+        Logger.log(`✅ Connection successful! Found ${data.total} issues in filter (configured limit: ${MAX_RESULTS})`);
         return true;
       } else {
         Logger.log(`❌ Connection failed: ${response.getResponseCode()}`);

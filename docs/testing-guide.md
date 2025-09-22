@@ -76,10 +76,10 @@ const JIRA_FIELDS = [
 3. Verify:
    - Headers are correct (row 1)
    - Issue data appears (starting row 2)
-   - Custom columns (L+) are preserved
+   - Custom columns (N+) are preserved
    - Field values look correct
 
-**Expected result:** Your sheet should have Jira data in columns A-K, with your custom prioritization columns in L+ untouched.
+**Expected result:** Your sheet should have Jira data in columns A-M (including PX Impact Score in column E), with your custom prioritization columns in N+ untouched.
 
 ## Phase 5: Data Validation
 
@@ -92,7 +92,7 @@ Check these specific fields are working:
 - **Rank**: Critical for Plan view ordering (may show numbers or be empty)
 
 ### Step 10: Test custom columns
-1. Add some test data in columns L+ (Value, Impact, Cost)
+1. Add some test data in columns N+ (Reach, Impact, Confidence, Effort, Priority Score)
 2. Run `syncJiraIssues()` again
 3. Verify your custom data is preserved
 
@@ -123,8 +123,8 @@ Since this is manual-only, there are no triggers to set up.
 - Check field permissions
 
 **Custom columns being overwritten**
-- Verify your custom data is in columns L and beyond
-- Check that `JIRA_FIELDS` array has exactly 11 items (A-K)
+- Verify your custom data is in columns N and beyond
+- Check that `JIRA_FIELDS` array has exactly 13 items (A-M, including PX Impact Score)
 
 ### Debugging Commands
 ```javascript

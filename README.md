@@ -90,7 +90,6 @@ After first sync, manually add RICE scoring columns (M+):
 - **Impact** - Business value of the feature (dropdown scale)
 - **Confidence** - Confidence in estimates (dropdown percentage) 
 - **Effort** - Development effort (dropdown t-shirt sizing)
-- **Priority Score** - Calculated RICE score
 
 See `templates/guidance-setup-instructions.md` for detailed RICE framework setup.
 
