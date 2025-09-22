@@ -27,7 +27,7 @@ const FIELD_CONFIG = [
   { field: 'issuetype',             header: 'Issue Type' },
   { field: 'components',            header: 'Components' },
   { field: 'customfield_12316752',  header: 'Product Manager' },
-  { field: 'rank',                  header: 'Rank' },
+  { field: 'customfield_12311940',                  header: 'Rank' },
   { field: 'reporter',              header: 'Reporter' },
   { field: 'assignee',              header: 'Assignee' },
   { field: 'customfield_12319940',  header: 'Target Version' }
