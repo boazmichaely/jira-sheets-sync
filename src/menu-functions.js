@@ -13,7 +13,7 @@ function onOpen() {
     .addItem('📥 Sync Jira Issues', 'syncJiraIssuesWithNotification')
     .addItem('🔧 View/Edit Jira Filter', 'openJiraFilter')
     .addSeparator()
-    .addItem('🎛️ Show Control Panel', 'showSidebar')
+    .addItem('🎛️ Show Sidebar', 'showSidebar')
     .addToUi();
 }
 
@@ -93,8 +93,7 @@ function getCurrentConfig() {
  */
 function showSidebar() {
   const html = HtmlService.createHtmlOutputFromFile('sidebar')
-    .setTitle('Jira Sync Control Panel')
-    .setWidth(300);
+    .setTitle('Jira Sync Sidebar');
   
   SpreadsheetApp.getUi().showSidebar(html);
 }
