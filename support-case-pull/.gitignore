@@ -1,0 +1,29 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Credentials and sensitive files
+*token*.py
+*credentials*.py
+*password*.txt
+
+# Input files with case numbers (user-specific data)
+config.json
+cases_input.txt
+
+# Output files
+*.csv
+cases_*.csv
+output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store

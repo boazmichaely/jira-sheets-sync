@@ -1,0 +1,43 @@
+🚀 QUICK START FOR SSO USERS
+================================
+
+Everything is set up! Here's what you need to do:
+
+STEP 1: Get OAuth Credentials
+------------------------------
+1. Open: https://console.redhat.com/
+2. Find "Service Accounts" (might be under Settings or IAM)
+3. Create a new service account
+4. Save the CLIENT ID and CLIENT SECRET
+
+STEP 2: Add Credentials
+------------------------
+Edit this file:
+  /Users/bmichael/code/Google-scripts/support-case-pull/credentials.py
+
+Change these two lines:
+  OAUTH_CLIENT_ID = "paste-your-client-id-here"
+  OAUTH_CLIENT_SECRET = "paste-your-client-secret-here"
+
+STEP 3: Run the Test
+--------------------
+cd /Users/bmichael/code/Google-scripts/support-case-pull
+source venv/bin/activate
+python test_api.py
+
+WHAT YOU'LL SEE:
+- If it works: Complete JSON of case 04257923 with all fields
+- If it fails: Error messages to help debug
+
+STEP 4: Share Results
+---------------------
+Once it works, share the output with me so I can:
+- See what fields are available
+- Build the full solution to process multiple cases
+- Create CSV output
+
+NEED HELP?
+----------
+See SSO_SETUP_GUIDE.md for detailed instructions
+Or let me know where you're stuck!
+

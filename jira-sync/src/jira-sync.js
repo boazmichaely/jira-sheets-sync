@@ -28,6 +28,20 @@ function syncJiraIssues() {
     // Get or create the sheet
     const sheet = getSheet();
     
+    // Show confirmation before sync
+    const ui = SpreadsheetApp.getUi();
+    const sheetName = getUserSheetName();
+    const response = ui.alert(
+      'Confirm Sync',
+      `Ready to sync Jira issues to:\n"${sheetName}"\n\nThis will update the sheet with your current Jira filter results.\n\nProceed?`,
+      ui.ButtonSet.OK_CANCEL
+    );
+    
+    if (response !== ui.Button.OK) {
+      Logger.log('Sync cancelled by user');
+      return;
+    }
+    
     // Clear any active filter criteria but keep filter dropdowns
     const filter = sheet.getFilter();
     if (filter) {
@@ -76,19 +90,82 @@ function syncJiraIssues() {
    */
   function getSheet() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = spreadsheet.getSheetByName(SHEET_NAME);
+    const sheetName = getUserSheetName();
+    let sheet = spreadsheet.getSheetByName(sheetName);
     
     if (!sheet) {
-      sheet = spreadsheet.insertSheet(SHEET_NAME);
-      Logger.log(`Created new sheet: ${SHEET_NAME}`);
+      // Show confirmation before creating new sheet
+      const ui = SpreadsheetApp.getUi();
+      const response = ui.alert(
+        'Create New Sheet?',
+        `Sheet "${sheetName}" does not exist.\n\nDo you want to create it for your Jira sync?`,
+        ui.ButtonSet.OK_CANCEL
+      );
+      
+      if (response !== ui.Button.OK) {
+        throw new Error('Sheet creation cancelled by user');
+      }
+      
+      sheet = spreadsheet.insertSheet(sheetName);
+      Logger.log(`Created new sheet: ${sheetName}`);
+      
+      // Initialize the new sheet with proper formatting
+      initializeNewSheet(sheet);
     }
     
     return sheet;
   }
+
+  /**
+   * Initialize a new sheet with proper formatting and setup
+   */
+  function initializeNewSheet(sheet) {
+    try {
+      Logger.log('Initializing new sheet with formatting...');
+      
+      // Set freeze panes: 1 row (headers) and 2 columns (Key + Summary)
+      sheet.setFrozenRows(1);
+      sheet.setFrozenColumns(2);
+      Logger.log('Applied freeze: 1 row, 2 columns');
+      
+      // Set basic sheet properties
+      sheet.getRange('A1').activate(); // Set active cell to A1
+      Logger.log('Set active cell to A1');
+      
+      // Setup RICE columns automatically for new sheets
+      Logger.log('Setting up RICE columns for new sheet...');
+      const riceStartColumn = JIRA_FIELDS.length + 1;
+      const riceHeaders = ['Reach', 'Impact', 'Confidence', 'Effort', 'RICE Score'];
+      
+      // Add RICE headers
+      sheet.getRange(1, riceStartColumn, 1, riceHeaders.length).setValues([riceHeaders]);
+      Logger.log('Added RICE headers: %s', riceHeaders.join(', '));
+      
+      // Format RICE headers (Reach, Impact, Confidence, Effort) with yellow background
+      sheet.getRange(1, riceStartColumn, 1, 4)
+        .setFontWeight('bold')
+        .setBackground('#ffff00');
+      
+      // Format Score header with light magenta orange background
+      sheet.getRange(1, riceStartColumn + 4, 1, 1)
+        .setFontWeight('bold')
+        .setBackground('#ffcc99');
+      
+      // Set up dropdowns and RICE Score formula
+      setupRiceDropdownsAndFormulas(sheet, riceStartColumn);
+      Logger.log('✅ RICE columns setup complete for new sheet');
+      
+      Logger.log('✅ Sheet initialization complete');
+      
+    } catch (error) {
+      Logger.log('❌ Sheet initialization failed: %s', error.message);
+      // Don't throw - initialization failure shouldn't stop the sync
+    }
+  }
   
   /**
- * Fetch issues from Jira ordered by Rank ASC
- */
+* Fetch issues from Jira ordered by Rank ASC
+*/
 function fetchJiraIssues() {
   const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${FILTER_ID} ORDER BY Rank ASC&maxResults=${MAX_RESULTS}&fields=${JIRA_FIELDS.join(',')}`;
   
@@ -127,7 +204,7 @@ function fetchJiraIssues() {
     // Use the configured column headers from config.js
     sheet.getRange(1, 1, 1, COLUMN_HEADERS.length).setValues([COLUMN_HEADERS]);
     sheet.getRange(1, 1, 1, COLUMN_HEADERS.length).setFontWeight('bold');
-    sheet.setFrozenRows(1);
+    // Note: Freeze panes are now handled in initializeNewSheet() for new sheets
   }
   
   /**
@@ -327,6 +404,179 @@ function restoreCustomDataByKey(sheet, customDataMap) {
   } catch (error) {
     Logger.log(`Error restoring custom data: ${error.message}`);
   }
+}
+
+/**
+ * Setup RICE columns for prioritization
+ * Run this once for new user sheets to add RICE framework columns
+ */
+function setupRiceColumns() {
+  try {
+    Logger.log('Setting up RICE columns...');
+    
+    // Get the currently active sheet
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const sheetName = sheet.getName();
+    
+    // Show confirmation before modifying the active sheet
+    const ui = SpreadsheetApp.getUi();
+    const response = ui.alert(
+      'Setup RICE Columns',
+      `This will add RICE prioritization columns to the current sheet:\n"${sheetName}"\n\nColumns will be added after your existing data.\n\nProceed?`,
+      ui.ButtonSet.OK_CANCEL
+    );
+    
+    if (response !== ui.Button.OK) {
+      Logger.log('RICE setup cancelled by user');
+      return { success: false, message: 'Setup cancelled by user' };
+    }
+    
+    // Calculate starting column (after JIRA fields)
+    const riceStartColumn = JIRA_FIELDS.length + 1;
+    Logger.log('RICE columns starting at column: %s', riceStartColumn);
+    
+    // RICE column headers
+    const riceHeaders = ['Reach', 'Impact', 'Confidence', 'Effort', 'RICE Score'];
+    
+    // Add headers
+    sheet.getRange(1, riceStartColumn, 1, riceHeaders.length).setValues([riceHeaders]);
+    Logger.log('Added RICE headers: %s', riceHeaders.join(', '));
+    
+    // Format RICE headers (Reach, Impact, Confidence, Effort) with yellow background
+    const riceHeaderRange = sheet.getRange(1, riceStartColumn, 1, 4); // First 4 columns
+    riceHeaderRange
+      .setFontWeight('bold')
+      .setBackground('#ffff00'); // Yellow
+    Logger.log('Applied yellow formatting to RICE headers');
+    
+    // Format Score header with light magenta orange background  
+    const scoreHeaderRange = sheet.getRange(1, riceStartColumn + 4, 1, 1); // 5th column (Score)
+    scoreHeaderRange
+      .setFontWeight('bold')
+      .setBackground('#ffcc99'); // Light magenta orange
+    Logger.log('Applied light magenta orange formatting to Score header');
+    
+    // Set up dropdowns for Impact, Confidence, and Effort, plus RICE Score formula
+    setupRiceDropdownsAndFormulas(sheet, riceStartColumn);
+    
+    Logger.log('✅ RICE columns setup complete!');
+    
+    return {
+      success: true,
+      startColumn: riceStartColumn,
+      headers: riceHeaders
+    };
+    
+  } catch (error) {
+    Logger.log('❌ RICE setup failed: %s', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Setup dropdown validations for RICE columns and RICE Score formula
+ */
+function setupRiceDropdownsAndFormulas(sheet, startColumn) {
+  try {
+    // Column positions (relative to start column)
+    const reachColumn = startColumn;      // N - no dropdown  
+    const impactColumn = startColumn + 1; // O - Impact dropdown
+    const confidenceColumn = startColumn + 2; // P - Confidence dropdown
+    const effortColumn = startColumn + 3; // Q - Effort dropdown
+    
+    Logger.log('Setting up dropdowns at columns: Impact=%s, Confidence=%s, Effort=%s', 
+               impactColumn, confidenceColumn, effortColumn);
+    
+    // Get the spreadsheet to reference the Guidance sheet
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Setup Impact dropdown (Column O) - =Guidance!$A$8:$A$11
+    const impactRange = spreadsheet.getRange('Guidance!$A$8:$A$11');
+    const impactRule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(impactRange)
+      .setAllowInvalid(false)
+      .setHelpText('Select impact level from guidance sheet')
+      .build();
+    sheet.getRange(2, impactColumn, 1000).setDataValidation(impactRule);
+    Logger.log('✅ Impact dropdown configured (Column %s)', impactColumn);
+    
+    // Setup Confidence dropdown (Column P) - =Guidance!$D$8:$D$13
+    const confidenceRange = spreadsheet.getRange('Guidance!$D$8:$D$13');
+    const confidenceRule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(confidenceRange)
+      .setAllowInvalid(false)
+      .setHelpText('Select confidence level from guidance sheet')
+      .build();
+    sheet.getRange(2, confidenceColumn, 1000).setDataValidation(confidenceRule);
+    Logger.log('✅ Confidence dropdown configured (Column %s)', confidenceColumn);
+    
+    // Setup Effort dropdown (Column Q) - =Guidance!$G$8:$G$12
+    const effortRange = spreadsheet.getRange('Guidance!$G$8:$G$12');
+    const effortRule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(effortRange)
+      .setAllowInvalid(false)
+      .setHelpText('Select effort level from guidance sheet')
+      .build();
+    sheet.getRange(2, effortColumn, 1000).setDataValidation(effortRule);
+    Logger.log('✅ Effort dropdown configured (Column %s)', effortColumn);
+    
+    // Setup RICE Score formula (Column R)
+    const scoreColumn = startColumn + 4;
+    setupRiceScoreFormula(sheet, startColumn, scoreColumn);
+    
+  } catch (error) {
+    Logger.log('❌ Dropdown setup failed: %s', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Setup RICE Score formula for the score column
+ */
+function setupRiceScoreFormula(sheet, startColumn, scoreColumn) {
+
+  // = Score_Weight * $N2 * (xlookup($O2, INDEX(Impact_Mapping,,1), INDEX(Impact_Mapping,,2) ) * Impact_Weight ) * (xlookup($P2,INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2))*Confidence_Weight) / (xlookup($Q2,INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2))*Effort_Weight)
+
+  try {
+    // Convert column numbers to letters for formula
+    const reachCol = columnToLetter(startColumn);
+    const impactCol = columnToLetter(startColumn + 1);
+    const confidenceCol = columnToLetter(startColumn + 2);
+    const effortCol = columnToLetter(startColumn + 3);
+    
+    Logger.log('Setting up RICE Score formula at column %s using: Reach=%s, Impact=%s, Confidence=%s, Effort=%s', 
+               scoreColumn, reachCol, impactCol, confidenceCol, effortCol);
+    
+    // Build the dynamic RICE Score formula
+    const scoreFormula = `=Score_Weight*(${reachCol}2 * (xlookup(${impactCol}2,INDEX(Impact_Mapping,,1),INDEX(Impact_Mapping,,2))*Impact_Weight) * (xlookup(${confidenceCol}2,INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2) ) * Confidence_Weight)) / (xlookup(${effortCol}2,INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2)) * Effort_Weight)`;
+    
+    // Apply formula to all rows starting from row 2
+    const scoreRange = sheet.getRange(2, scoreColumn, 1000);
+    scoreRange.setFormula(scoreFormula);
+    
+    // Format Score column to show 2 decimal places
+    scoreRange.setNumberFormat('0.00');
+    Logger.log('Applied 2 decimal places formatting to Score column');
+    
+    Logger.log('✅ RICE Score formula applied: %s', scoreFormula);
+    
+  } catch (error) {
+    Logger.log('❌ RICE Score formula setup failed: %s', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Convert column number to letter (1=A, 2=B, ..., 26=Z, 27=AA, etc.)
+ */
+function columnToLetter(column) {
+  let result = '';
+  while (column > 0) {
+    column--;
+    result = String.fromCharCode(65 + (column % 26)) + result;
+    column = Math.floor(column / 26);
+  }
+  return result;
 }
 
 /**

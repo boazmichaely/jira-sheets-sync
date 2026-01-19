@@ -101,10 +101,11 @@
         google.script.run
           .withSuccessHandler(function(config) {
             document.getElementById('configSection').innerHTML = `
+              <strong>Current User:</strong> ${config.userName}<br>
+              <strong>Target Sheet:</strong> ${config.sheetName}<br><br>
               <strong>Filter:</strong> JIRA-SYNC-FEATURES<br>
               <strong>Filter ID:</strong> ${config.filterId}<br>
-              <strong>Max Results:</strong> ${config.maxResults}<br>
-              <strong>Target Sheet:</strong> ${config.sheetName}
+              <strong>Max Results:</strong> ${config.maxResults}
             `;
           })
           .getCurrentConfig();

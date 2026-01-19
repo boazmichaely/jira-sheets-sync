@@ -13,6 +13,8 @@ function onOpen() {
     .addItem('📥 Sync Jira Issues', 'syncJiraIssuesWithNotification')
     .addItem('🔧 View/Edit Jira Filter', 'openJiraFilter')
     .addSeparator()
+    .addItem('📊 Setup RICE Columns', 'setupRiceColumnsWithNotification')
+    .addSeparator()
     .addItem('🎛️ Show Sidebar', 'showSidebar')
     .addToUi();
 }
@@ -35,6 +37,33 @@ function syncJiraIssuesWithNotification() {
     // Show error notification
     SpreadsheetApp.getActiveSpreadsheet().toast(`Sync failed: ${error.message}`, '❌ Error', 10);
     Logger.log(`Sync error: ${error.message}`);
+  }
+}
+
+/**
+ * Setup RICE columns with user notification
+ */
+function setupRiceColumnsWithNotification() {
+  try {
+    // Run the actual setup (includes its own confirmation dialog)
+    const result = setupRiceColumns();
+    
+    // Handle the result
+    if (result && result.success === false) {
+      // User cancelled - show neutral message
+      SpreadsheetApp.getActiveSpreadsheet().toast(result.message || 'RICE setup cancelled', 'ℹ️ Cancelled', 3);
+    } else {
+      // Show working toast only after user confirms
+      SpreadsheetApp.getActiveSpreadsheet().toast('Setting up RICE columns...', '📊 Setup in Progress', 2);
+      
+      // Show success notification  
+      SpreadsheetApp.getActiveSpreadsheet().toast('RICE columns setup completed successfully!', '✅ Success', 5);
+    }
+    
+  } catch (error) {
+    // Show error notification for actual errors
+    SpreadsheetApp.getActiveSpreadsheet().toast(`RICE setup failed: ${error.message}`, '❌ Error', 10);
+    Logger.log(`RICE setup error: ${error.message}`);
   }
 }
 
@@ -83,8 +112,9 @@ function getCurrentConfig() {
   return {
     filterId: FILTER_ID,
     maxResults: MAX_RESULTS,
-    sheetName: SHEET_NAME,
-    baseUrl: JIRA_BASE_URL
+    sheetName: getUserSheetName(),
+    baseUrl: JIRA_BASE_URL,
+    userName: Session.getActiveUser().getUsername()
   };
 }
 

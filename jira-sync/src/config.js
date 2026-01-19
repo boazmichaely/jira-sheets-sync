@@ -11,7 +11,18 @@
 const JIRA_BASE_URL = 'https://issues.redhat.com';
 // JIRA_TOKEN is defined in token.js (import that file to Apps Script)
 const FILTER_ID = 12480488; // https://issues.redhat.com/issues/?filter=12480488  - "JIRA-SYNC-FEATURES". 
-const SHEET_NAME = 'Jira RFEs';
+const SHEET_BASE_NAME = 'Jira';
+
+/**
+ * Get user-specific sheet name
+ */
+function getUserSheetName() {
+  const userName = Session.getActiveUser().getUsername();
+  if (!userName) {
+    throw new Error('Unable to determine current user name');
+  }
+  return `${SHEET_BASE_NAME} - ${userName}`;
+}
 const MAX_RESULTS = 300; // Maximum number of issues to fetch from Jira
 
 // === FIELD CONFIGURATION ===
