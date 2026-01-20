@@ -277,9 +277,9 @@ function readExistingCustomData(sheet) {
     if (lastRow <= 1) return customData; // No data rows
     
     const customColumnStart = JIRA_FIELDS.length + 1; // Column N (14th column) 
-    const customColumnCount = 5; // Reach, Impact, Confidence, Effort, Priority Score
+    const customColumnCount = 4; // Reach, Impact, Confidence, Effort (NOT Score - it has a formula)
     
-    // Read key column (A) and custom columns (N-R)
+    // Read key column (A) and custom columns (N-Q, not R which has the RICE Score formula)
     const keyRange = sheet.getRange(2, 1, lastRow - 1, 1);
     const customRange = sheet.getRange(2, customColumnStart, lastRow - 1, customColumnCount);
     
@@ -298,8 +298,8 @@ function readExistingCustomData(sheet) {
             reach: customRow[0] || '',
             impact: customRow[1] || '',
             confidence: customRow[2] || '',
-            effort: customRow[3] || '',
-            score: customRow[4] || ''
+            effort: customRow[3] || ''
+            // Note: Score column is NOT saved - it contains a formula that must be preserved
           };
         }
       }
@@ -374,7 +374,7 @@ function restoreCustomDataByKey(sheet, customDataMap) {
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1 || Object.keys(customDataMap).length === 0) return;
     
-    const customColumnStart = JIRA_FIELDS.length + 1; // Column M
+    const customColumnStart = JIRA_FIELDS.length + 1; // Column N
     const keyRange = sheet.getRange(2, 1, lastRow - 1, 1);
     const keys = keyRange.getValues().flat();
     
@@ -387,17 +387,20 @@ function restoreCustomDataByKey(sheet, customDataMap) {
         
         const customData = customDataMap[issueKey];
         if (customData) {
-          restoreData.push([customData.reach, customData.impact, customData.confidence, customData.effort, customData.score]);
+          // Only restore user-input columns (Reach, Impact, Confidence, Effort)
+          // Score column has a formula - don't overwrite it
+          restoreData.push([customData.reach, customData.impact, customData.confidence, customData.effort]);
         } else {
-          restoreData.push(['', '', '', '', '']); // Empty for new issues
+          restoreData.push(['', '', '', '']); // Empty for new issues
         }
       } else {
-        restoreData.push(['', '', '', '', '']);
+        restoreData.push(['', '', '', '']);
       }
     });
     
     if (restoreData.length > 0) {
-      sheet.getRange(2, customColumnStart, restoreData.length, 5).setValues(restoreData);
+      // Only write 4 columns (Reach, Impact, Confidence, Effort) - leave Score formula intact
+      sheet.getRange(2, customColumnStart, restoreData.length, 4).setValues(restoreData);
       Logger.log(`Restored custom data for ${restoreData.filter(row => row.some(cell => cell !== '')).length} issues`);
     }
     
