@@ -19,11 +19,16 @@
 
 /**
  * Main sync function - fetches Jira issues and updates Google Sheet
- * Uses issue key matching to preserve custom data during sync
+ * 
+ * Sync logic:
+ * 1. Maintain user's sort order
+ * 2. Delete rows for issues no longer in Jira
+ * 3. Update Jira columns for existing issues (preserve RICE)
+ * 4. Add new issues at end with default RICE values
  */
 function syncJiraIssues() {
   try {
-    Logger.log('Starting enhanced Jira sync...');
+    Logger.log('=== Starting Jira Sync ===');
     
     // Get or create the sheet
     const sheet = getSheet();
@@ -45,47 +50,227 @@ function syncJiraIssues() {
     // Clear any active filter criteria but keep filter dropdowns
     const filter = sheet.getFilter();
     if (filter) {
-      // Get the filter range
       const filterRange = filter.getRange();
-      // Remove the old filter and recreate with no criteria (keeps dropdowns)
       filter.remove();
       sheet.getRange(filterRange.getA1Notation()).createFilter();
-      Logger.log('Cleared filter criteria but kept filter dropdowns');
+      logDebug(' Cleared filter criteria');
     }
     
-    // Step 1: Read existing custom data before clearing
-    const existingCustomData = readExistingCustomData(sheet);
-    Logger.log(`Preserved custom data for ${Object.keys(existingCustomData).length} issues`);
-    
-    // Step 2: Fetch issues from Jira (ordered by Rank ASC)
+    // Step 1: Fetch issues from Jira
+    logDebug(' Step 1 - Fetching issues from Jira...');
     const jiraIssues = fetchJiraIssues();
     if (!jiraIssues || jiraIssues.length === 0) {
-      Logger.log('No issues found in filter');
+      Logger.log('No issues found in Jira filter');
       return;
     }
+    logDebug(' Fetched %s issues from Jira', jiraIssues.length);
     
-    // Step 3: Merge with existing sheet order, new issues at end
-    const orderedIssues = mergeWithExistingOrder(sheet, jiraIssues);
+    // Build Jira issue map and rank map
+    const jiraIssueMap = {};
+    const jiraRankMap = {};
+    jiraIssues.forEach((issue, index) => {
+      jiraIssueMap[issue.key] = issue;
+      jiraRankMap[issue.key] = index + 1;
+    });
+    logDebug(' Built Jira maps for %s issues', Object.keys(jiraIssueMap).length);
     
-    // Step 4: Clear existing Jira data (preserve custom columns)
-    clearJiraColumns(sheet);
+    // Step 2: Read current sheet state
+    logDebug(' Step 2 - Reading current sheet state...');
+    const sheetState = readSheetState(sheet);
+    logDebug(' Found %s existing issues in sheet', Object.keys(sheetState.issueRows).length);
     
-    // Step 5: Write headers and data with ranking
+    // Step 3: Determine what to do with each issue
+    logDebug(' Step 3 - Categorizing issues...');
+    const existingKeys = Object.keys(sheetState.issueRows);
+    const jiraKeys = new Set(Object.keys(jiraIssueMap));
+    
+    const toDelete = existingKeys.filter(key => !jiraKeys.has(key));
+    const toUpdate = existingKeys.filter(key => jiraKeys.has(key));
+    const toAdd = [...jiraKeys].filter(key => !sheetState.issueRows[key]);
+    
+    logDebug(' To DELETE: %s issues (%s)', toDelete.length, toDelete.join(', ') || 'none');
+    logDebug(' To UPDATE: %s issues', toUpdate.length);
+    logDebug(' To ADD: %s issues (%s)', toAdd.length, toAdd.join(', ') || 'none');
+    
+    // Step 4: Delete rows for removed issues (from bottom to top to preserve row numbers)
+    logDebug(' Step 4 - Deleting removed issues...');
+    if (toDelete.length > 0) {
+      const rowsToDelete = toDelete.map(key => sheetState.issueRows[key]).sort((a, b) => b - a);
+      logDebug(' Deleting rows (bottom to top): %s', rowsToDelete.join(', '));
+      rowsToDelete.forEach(row => {
+        sheet.deleteRow(row);
+        logDebug(' Deleted row %s', row);
+      });
+    }
+    
+    // Step 5: Re-read sheet state after deletions (row numbers have changed)
+    logDebug(' Step 5 - Re-reading sheet state after deletions...');
+    const updatedSheetState = readSheetState(sheet);
+    logDebug(' Sheet now has %s issues', Object.keys(updatedSheetState.issueRows).length);
+    
+    // Step 6: Update existing issues in place (Jira columns only, preserve RICE)
+    logDebug(' Step 6 - Updating existing issues in place...');
+    toUpdate.forEach(key => {
+      const row = updatedSheetState.issueRows[key];
+      if (row) {
+        const issue = jiraIssueMap[key];
+        const rowData = buildJiraRowData(issue, jiraRankMap[key]);
+        sheet.getRange(row, 1, 1, rowData.length).setValues([rowData]);
+        logDebug(' Updated row %s for %s', row, key);
+      }
+    });
+    
+    // Step 7: Add new issues at the end with default RICE values (batched for performance)
+    logDebug(' Step 7 - Adding new issues...');
+    if (toAdd.length > 0) {
+      const lastRow = sheet.getLastRow();
+      const startRow = lastRow > 0 ? lastRow + 1 : 2; // Start at row 2 if sheet is empty
+      const rowCount = toAdd.length;
+      logDebug(' Adding %s new issues starting at row %s (batched)', rowCount, startRow);
+      
+      // Build all row data at once
+      const allRowData = toAdd.map(key => {
+        const issue = jiraIssueMap[key];
+        return buildJiraRowData(issue, jiraRankMap[key]);
+      });
+      
+      // Write all Jira data in one batch
+      sheet.getRange(startRow, 1, rowCount, allRowData[0].length).setValues(allRowData);
+      logDebug(' Wrote %s rows of Jira data', rowCount);
+      
+      // Apply RICE to all new rows in batch
+      applyRiceToRows(sheet, startRow, rowCount);
+      logDebug(' Applied RICE to %s new rows', rowCount);
+    }
+    
+    // Step 8: Ensure headers are present
+    logDebug(' Step 8 - Ensuring headers...');
     writeHeaders(sheet);
-    writeIssueDataWithRanking(sheet, orderedIssues, jiraIssues);
     
-    // Step 6: Restore custom data by issue key
-    restoreCustomDataByKey(sheet, existingCustomData);
-    
-    // Step 7: Ensure RICE columns cover all data rows (for new sheets and new issues)
-    ensureRiceColumnsForDataRows(sheet);
-    
-    Logger.log(`Enhanced sync complete: ${jiraIssues.length} issues updated`);
+    Logger.log('=== Sync Complete: %s updated, %s added, %s deleted ===', 
+               toUpdate.length, toAdd.length, toDelete.length);
     
   } catch (error) {
-    Logger.log(`Sync failed: ${error.message}`);
+    Logger.log('ERROR: Sync failed: %s', error.message);
     throw error;
   }
+}
+
+/**
+ * Read the current state of the sheet
+ * Returns map of {issueKey -> rowNumber}
+ */
+function readSheetState(sheet) {
+  const state = {
+    issueRows: {},  // {issueKey -> rowNumber}
+    lastRow: sheet.getLastRow()
+  };
+  
+  if (state.lastRow <= 1) {
+    logDebug(' Sheet is empty (no data rows)');
+    return state;
+  }
+  
+  // Read the Key column (column A)
+  const keyRange = sheet.getRange(2, 1, state.lastRow - 1, 1);
+  const keys = keyRange.getValues();
+  
+  keys.forEach((row, index) => {
+    const cellValue = row[0];
+    if (cellValue) {
+      // Extract issue key from hyperlink formula if needed
+      let issueKey = cellValue;
+      if (typeof cellValue === 'string' && cellValue.includes('HYPERLINK')) {
+        const match = cellValue.match(/"([^"]+)"\s*\)$/);
+        if (match) issueKey = match[1];
+      }
+      state.issueRows[issueKey] = index + 2; // +2 for header row and 0-indexing
+    }
+  });
+  
+  return state;
+}
+
+/**
+ * Build a row of Jira data for an issue
+ */
+function buildJiraRowData(issue, rank) {
+  return JIRA_FIELDS.map(fieldName => {
+    if (fieldName === 'key') {
+      // Return hyperlink formula for the key
+      const url = `${JIRA_BASE_URL}/browse/${issue.key}`;
+      return `=HYPERLINK("${url}","${issue.key}")`;
+    } else if (fieldName === 'customfield_12311940') {
+      // Replace LexoRank with position number
+      return rank || '';
+    } else {
+      let value = issue.fields[fieldName];
+      return extractSimpleValue(value);
+    }
+  });
+}
+
+/**
+ * Apply RICE columns (dropdowns, formula, defaults) to multiple rows at once (batched for performance)
+ */
+function applyRiceToRows(sheet, startRow, rowCount) {
+  const riceStartColumn = JIRA_FIELDS.length + 1;
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Default values
+  const defaults = {
+    reach: 1,
+    impact: 'Nice to have',
+    confidence: 'Very low',
+    effort: 'XL'
+  };
+  
+  // Build default values array for all rows
+  const defaultData = [];
+  for (let i = 0; i < rowCount; i++) {
+    defaultData.push([defaults.reach, defaults.impact, defaults.confidence, defaults.effort]);
+  }
+  
+  // Set default values for all rows at once
+  sheet.getRange(startRow, riceStartColumn, rowCount, 4).setValues(defaultData);
+  
+  // Setup dropdowns for all rows at once
+  const impactRange = spreadsheet.getRange('Guidance!$A$8:$A$11');
+  const impactRule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(impactRange)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(startRow, riceStartColumn + 1, rowCount).setDataValidation(impactRule);
+  
+  const confidenceRange = spreadsheet.getRange('Guidance!$D$8:$D$13');
+  const confidenceRule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(confidenceRange)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(startRow, riceStartColumn + 2, rowCount).setDataValidation(confidenceRule);
+  
+  const effortRange = spreadsheet.getRange('Guidance!$G$8:$G$12');
+  const effortRule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(effortRange)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(startRow, riceStartColumn + 3, rowCount).setDataValidation(effortRule);
+  
+  // Setup RICE Score formula for all rows at once
+  const reachCol = columnToLetter(riceStartColumn);
+  const impactCol = columnToLetter(riceStartColumn + 1);
+  const confidenceCol = columnToLetter(riceStartColumn + 2);
+  const effortCol = columnToLetter(riceStartColumn + 3);
+  const scoreColumn = riceStartColumn + 4;
+  
+  // Formula uses row 2 reference - Google Sheets will auto-adjust for each row
+  const scoreFormula = `=Score_Weight*(${reachCol}${startRow} * (xlookup(${impactCol}${startRow},INDEX(Impact_Mapping,,1),INDEX(Impact_Mapping,,2))*Impact_Weight) * (xlookup(${confidenceCol}${startRow},INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2) ) * Confidence_Weight)) / (xlookup(${effortCol}${startRow},INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2)) * Effort_Weight)`;
+  
+  const scoreRange = sheet.getRange(startRow, scoreColumn, rowCount);
+  scoreRange.setFormula(scoreFormula);
+  scoreRange.setNumberFormat('0.00');
+  
+  logDebug(' Applied RICE (defaults, dropdowns, formula) to rows %s-%s', startRow, startRow + rowCount - 1);
 }
   
   /**
@@ -93,7 +278,11 @@ function syncJiraIssues() {
    */
   function getSheet() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const currentUser = getCurrentUsername();
     const sheetName = getUserSheetName();
+    
+    Logger.log('Current user: %s, Target sheet: %s', currentUser, sheetName);
+    
     let sheet = spreadsheet.getSheetByName(sheetName);
     
     if (!sheet) {
@@ -167,9 +356,13 @@ function syncJiraIssues() {
   
   /**
 * Fetch issues from Jira ordered by Rank ASC
+* Uses the current user's filter ID from User_Mapping
 */
 function fetchJiraIssues() {
-  const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${FILTER_ID} ORDER BY Rank ASC&maxResults=${MAX_RESULTS}&fields=${JIRA_FIELDS.join(',')}`;
+  const filterId = getUserFilterId();
+  const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${filterId} ORDER BY Rank ASC&maxResults=${MAX_RESULTS}&fields=${JIRA_FIELDS.join(',')}`;
+  
+  logDebug(' Fetching from Jira with filter ID: %s', filterId);
   
   const response = UrlFetchApp.fetch(url, {
     headers: {
@@ -183,21 +376,10 @@ function fetchJiraIssues() {
   }
   
   const data = JSON.parse(response.getContentText());
-  Logger.log(`Fetched ${data.issues.length} issues from Jira (ordered by Rank ASC, max: ${MAX_RESULTS})`);
+  Logger.log(`Fetched ${data.issues.length} issues from Jira (filter: ${filterId}, max: ${MAX_RESULTS})`);
   
   return data.issues;
 }
-  
-  /**
-   * Clear only the Jira columns, preserve custom prioritization columns
-   */
-  function clearJiraColumns(sheet) {
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return; // No data to clear
-    
-    const jiraColumnCount = JIRA_FIELDS.length;
-    sheet.getRange(2, 1, lastRow - 1, jiraColumnCount).clear();
-  }
   
   /**
    * Write column headers
@@ -208,46 +390,6 @@ function fetchJiraIssues() {
     sheet.getRange(1, 1, 1, COLUMN_HEADERS.length).setFontWeight('bold');
     // Note: Freeze panes are now handled in initializeNewSheet() for new sheets
   }
-  
-  /**
- * Write issue data to sheet with Jira ranking
- */
-function writeIssueDataWithRanking(sheet, orderedIssues, jiraIssues) {
-  // Create rank mapping from Jira order (1-based)
-  const jiraRankMap = {};
-  jiraIssues.forEach((issue, index) => {
-    jiraRankMap[issue.key] = index + 1;
-  });
-  
-  const data = orderedIssues.map(issue => {
-    return JIRA_FIELDS.map(fieldName => {
-      if (fieldName === 'key') {
-        return issue.key;
-      } else if (fieldName === 'customfield_12311940') {
-        // Replace LexoRank with Jira position number
-        return jiraRankMap[issue.key] || '';
-      } else {
-        let value = issue.fields[fieldName];
-        return extractSimpleValue(value);
-      }
-    });
-  });
-  
-  if (data.length > 0) {
-    // Write the data
-    sheet.getRange(2, 1, data.length, data[0].length).setValues(data);
-    
-    // Make Key column (column A) clickable URLs
-    const keyColumnData = orderedIssues.map(issue => {
-      const key = issue.key;
-      const url = `${JIRA_BASE_URL}/browse/${key}`;
-      return [`=HYPERLINK("${url}","${key}")`];
-    });
-    
-    // Update column A with hyperlinks
-    sheet.getRange(2, 1, keyColumnData.length, 1).setValues(keyColumnData);
-  }
-}
   
   /**
    * Simple value extraction for common Jira field types
@@ -268,306 +410,6 @@ function writeIssueDataWithRanking(sheet, orderedIssues, jiraIssues) {
     return value.toString();
   }
   
-  /**
- * Read existing custom data from the sheet
- */
-function readExistingCustomData(sheet) {
-  const customData = {};
-  
-  try {
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return customData; // No data rows
-    
-    const customColumnStart = JIRA_FIELDS.length + 1; // Column N (14th column) 
-    const customColumnCount = 4; // Reach, Impact, Confidence, Effort (NOT Score - it has a formula)
-    
-    // Read key column (A) and custom columns (N-Q, not R which has the RICE Score formula)
-    const keyRange = sheet.getRange(2, 1, lastRow - 1, 1);
-    const customRange = sheet.getRange(2, customColumnStart, lastRow - 1, customColumnCount);
-    
-    const keys = keyRange.getValues().flat();
-    const customValues = customRange.getValues();
-    
-    keys.forEach((key, index) => {
-      if (key && typeof key === 'string') {
-        // Extract just the issue key if it's a hyperlink formula
-        const issueKey = key.includes('HYPERLINK') ? 
-          key.match(/"([^"]+)"\s*\)$/)?.[1] || key : key;
-        
-        const customRow = customValues[index];
-        if (customRow && customRow.some(cell => cell !== '')) {
-          customData[issueKey] = {
-            reach: customRow[0] || '',
-            impact: customRow[1] || '',
-            confidence: customRow[2] || '',
-            effort: customRow[3] || ''
-            // Note: Score column is NOT saved - it contains a formula that must be preserved
-          };
-        }
-      }
-    });
-    
-  } catch (error) {
-    Logger.log(`Error reading existing custom data: ${error.message}`);
-  }
-  
-  return customData;
-}
-
-/**
- * Merge Jira issues with existing sheet order, new issues at end
- */
-function mergeWithExistingOrder(sheet, jiraIssues) {
-  const existingOrder = [];
-  
-  try {
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      const keyRange = sheet.getRange(2, 1, lastRow - 1, 1);
-      const keys = keyRange.getValues().flat();
-      
-      keys.forEach(key => {
-        if (key && typeof key === 'string') {
-          // Extract issue key from hyperlink if needed
-          const issueKey = key.includes('HYPERLINK') ? 
-            key.match(/"([^"]+)"\s*\)$/)?.[1] || key : key;
-          existingOrder.push(issueKey);
-        }
-      });
-    }
-  } catch (error) {
-    Logger.log(`Error reading existing order: ${error.message}`);
-  }
-  
-  // Create map for quick lookup
-  const jiraIssuesMap = {};
-  jiraIssues.forEach(issue => {
-    jiraIssuesMap[issue.key] = issue;
-  });
-  
-  // Build ordered list: existing order first, then new issues
-  const orderedIssues = [];
-  const usedKeys = new Set();
-  
-  // Add existing issues in their current order
-  existingOrder.forEach(key => {
-    if (jiraIssuesMap[key]) {
-      orderedIssues.push(jiraIssuesMap[key]);
-      usedKeys.add(key);
-    }
-  });
-  
-  // Add new issues at the end
-  jiraIssues.forEach(issue => {
-    if (!usedKeys.has(issue.key)) {
-      orderedIssues.push(issue);
-    }
-  });
-  
-  Logger.log(`Order: ${existingOrder.length} existing, ${orderedIssues.length - existingOrder.length} new issues`);
-  return orderedIssues;
-}
-
-/**
- * Restore custom data by matching issue keys
- */
-function restoreCustomDataByKey(sheet, customDataMap) {
-  try {
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1 || Object.keys(customDataMap).length === 0) return;
-    
-    const customColumnStart = JIRA_FIELDS.length + 1; // Column N
-    const keyRange = sheet.getRange(2, 1, lastRow - 1, 1);
-    const keys = keyRange.getValues().flat();
-    
-    const restoreData = [];
-    keys.forEach(key => {
-      if (key && typeof key === 'string') {
-        // Extract issue key from hyperlink if needed
-        const issueKey = key.includes('HYPERLINK') ? 
-          key.match(/"([^"]+)"\s*\)$/)?.[1] || key : key;
-        
-        const customData = customDataMap[issueKey];
-        if (customData) {
-          // Only restore user-input columns (Reach, Impact, Confidence, Effort)
-          // Score column has a formula - don't overwrite it
-          restoreData.push([customData.reach, customData.impact, customData.confidence, customData.effort]);
-        } else {
-          restoreData.push(['', '', '', '']); // Empty for new issues
-        }
-      } else {
-        restoreData.push(['', '', '', '']);
-      }
-    });
-    
-    if (restoreData.length > 0) {
-      // Only write 4 columns (Reach, Impact, Confidence, Effort) - leave Score formula intact
-      sheet.getRange(2, customColumnStart, restoreData.length, 4).setValues(restoreData);
-      Logger.log(`Restored custom data for ${restoreData.filter(row => row.some(cell => cell !== '')).length} issues`);
-    }
-    
-  } catch (error) {
-    Logger.log(`Error restoring custom data: ${error.message}`);
-  }
-}
-
-/**
- * Ensure RICE columns (dropdowns and formulas) cover all data rows
- * Called after data is written to handle both new sheets and new issues
- */
-function ensureRiceColumnsForDataRows(sheet) {
-  try {
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) {
-      Logger.log('No data rows - skipping RICE column setup');
-      return;
-    }
-    
-    const dataRowCount = lastRow - 1; // Exclude header row
-    const riceStartColumn = JIRA_FIELDS.length + 1;
-    const scoreColumn = riceStartColumn + 4;
-    
-    // Check if RICE formulas already exist by looking at the first data row's score cell
-    const firstScoreCell = sheet.getRange(2, scoreColumn);
-    const existingFormula = firstScoreCell.getFormula();
-    
-    if (existingFormula) {
-      // RICE is already set up - check if we need to extend to new rows
-      // Find the last row that has the RICE Score formula
-      const scoreColumnRange = sheet.getRange(2, scoreColumn, dataRowCount);
-      const formulas = scoreColumnRange.getFormulas();
-      
-      let lastRowWithFormula = 0;
-      for (let i = 0; i < formulas.length; i++) {
-        if (formulas[i][0]) {
-          lastRowWithFormula = i + 2; // +2 because we start at row 2
-        }
-      }
-      
-      if (lastRowWithFormula < lastRow) {
-        // Need to extend RICE to new rows
-        const newRowCount = lastRow - lastRowWithFormula;
-        Logger.log('Extending RICE columns to %s new rows (rows %s to %s)', 
-                   newRowCount, lastRowWithFormula + 1, lastRow);
-        
-        // Apply RICE setup only to the new rows
-        setupRiceDropdownsAndFormulasForRange(sheet, riceStartColumn, lastRowWithFormula + 1, newRowCount);
-        
-        // Set default values for the new rows
-        setRiceDefaultValues(sheet, riceStartColumn, lastRowWithFormula + 1, newRowCount);
-      } else {
-        Logger.log('RICE columns already cover all %s data rows', dataRowCount);
-      }
-    } else {
-      // No RICE formulas yet - apply to all data rows
-      Logger.log('Applying RICE columns to %s data rows', dataRowCount);
-      setupRiceDropdownsAndFormulas(sheet, riceStartColumn, dataRowCount);
-      
-      // Set default values for all rows (new sheet)
-      setRiceDefaultValues(sheet, riceStartColumn, 2, dataRowCount);
-    }
-    
-  } catch (error) {
-    Logger.log('Error ensuring RICE columns: %s', error.message);
-    // Don't throw - RICE setup failure shouldn't stop the sync
-  }
-}
-
-/**
- * Apply RICE dropdowns and formulas to a specific range of rows
- * Used when extending RICE to new rows added during sync
- */
-function setupRiceDropdownsAndFormulasForRange(sheet, startColumn, startRow, rowCount) {
-  try {
-    const impactColumn = startColumn + 1;
-    const confidenceColumn = startColumn + 2;
-    const effortColumn = startColumn + 3;
-    const scoreColumn = startColumn + 4;
-    
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Setup Impact dropdown
-    const impactRange = spreadsheet.getRange('Guidance!$A$8:$A$11');
-    const impactRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(impactRange)
-      .setAllowInvalid(false)
-      .setHelpText('Select impact level from guidance sheet')
-      .build();
-    sheet.getRange(startRow, impactColumn, rowCount).setDataValidation(impactRule);
-    
-    // Setup Confidence dropdown
-    const confidenceRange = spreadsheet.getRange('Guidance!$D$8:$D$13');
-    const confidenceRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(confidenceRange)
-      .setAllowInvalid(false)
-      .setHelpText('Select confidence level from guidance sheet')
-      .build();
-    sheet.getRange(startRow, confidenceColumn, rowCount).setDataValidation(confidenceRule);
-    
-    // Setup Effort dropdown
-    const effortRange = spreadsheet.getRange('Guidance!$G$8:$G$12');
-    const effortRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(effortRange)
-      .setAllowInvalid(false)
-      .setHelpText('Select effort level from guidance sheet')
-      .build();
-    sheet.getRange(startRow, effortColumn, rowCount).setDataValidation(effortRule);
-    
-    // Setup RICE Score formula - need to build with correct row reference
-    const reachCol = columnToLetter(startColumn);
-    const impactCol = columnToLetter(startColumn + 1);
-    const confidenceCol = columnToLetter(startColumn + 2);
-    const effortCol = columnToLetter(startColumn + 3);
-    
-    const scoreFormula = `=Score_Weight*(${reachCol}${startRow} * (xlookup(${impactCol}${startRow},INDEX(Impact_Mapping,,1),INDEX(Impact_Mapping,,2))*Impact_Weight) * (xlookup(${confidenceCol}${startRow},INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2) ) * Confidence_Weight)) / (xlookup(${effortCol}${startRow},INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2)) * Effort_Weight)`;
-    
-    const scoreRange = sheet.getRange(startRow, scoreColumn, rowCount);
-    scoreRange.setFormula(scoreFormula);
-    scoreRange.setNumberFormat('0.00');
-    
-    Logger.log('✅ Extended RICE columns to rows %s-%s', startRow, startRow + rowCount - 1);
-    
-  } catch (error) {
-    Logger.log('❌ Failed to extend RICE columns: %s', error.message);
-  }
-}
-
-/**
- * Set default values for empty RICE columns
- * Default values: Reach=1, Impact="Nice to have", Confidence="Very low", Effort="XL"
- */
-function setRiceDefaultValues(sheet, startColumn, startRow, rowCount) {
-  try {
-    const reachColumn = startColumn;
-    const impactColumn = startColumn + 1;
-    const confidenceColumn = startColumn + 2;
-    const effortColumn = startColumn + 3;
-    
-    // Default values
-    const defaults = {
-      reach: 1,
-      impact: 'Nice to have',
-      confidence: 'Very low',
-      effort: 'XL'
-    };
-    
-    // Build array of default values for all rows
-    const defaultData = [];
-    for (let i = 0; i < rowCount; i++) {
-      defaultData.push([defaults.reach, defaults.impact, defaults.confidence, defaults.effort]);
-    }
-    
-    // Apply defaults to the range (4 columns: Reach, Impact, Confidence, Effort)
-    sheet.getRange(startRow, reachColumn, rowCount, 4).setValues(defaultData);
-    
-    Logger.log('✅ Set RICE default values for %s rows (Reach=%s, Impact="%s", Confidence="%s", Effort="%s")',
-               rowCount, defaults.reach, defaults.impact, defaults.confidence, defaults.effort);
-    
-  } catch (error) {
-    Logger.log('❌ Failed to set RICE default values: %s', error.message);
-  }
-}
-
 /**
  * Setup RICE columns for prioritization
  * Run this once for new user sheets to add RICE framework columns
@@ -754,10 +596,14 @@ function columnToLetter(column) {
 
 /**
  * Test Jira connection - run this first to verify setup
+ * Uses the current user's filter ID from User_Mapping
  */
   function testConnection() {
     try {
-      const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${FILTER_ID}&maxResults=1`;
+      const filterId = getUserFilterId();
+      const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${filterId}&maxResults=1`;
+      
+      Logger.log('Testing connection with filter ID: %s', filterId);
       
       const response = UrlFetchApp.fetch(url, {
         headers: {
@@ -768,7 +614,7 @@ function columnToLetter(column) {
       
       if (response.getResponseCode() === 200) {
         const data = JSON.parse(response.getContentText());
-        Logger.log(`✅ Connection successful! Found ${data.total} issues in filter (configured limit: ${MAX_RESULTS})`);
+        Logger.log(`✅ Connection successful! Found ${data.total} issues in filter ${filterId} (configured limit: ${MAX_RESULTS})`);
         return true;
       } else {
         Logger.log(`❌ Connection failed: ${response.getResponseCode()}`);

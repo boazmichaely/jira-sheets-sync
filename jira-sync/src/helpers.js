@@ -1,14 +1,91 @@
 /**
- * Optional helper functions - only include if you need field discovery
- * For basic sync, the main script handles everything
+ * Helper functions for Jira Sync
  */
+
+// ===========================================
+// LOGGING FUNCTIONS
+// ===========================================
+
+/**
+ * Log debug message (only if DEBUG is true in config.js)
+ */
+function logDebug(message, ...args) {
+  if (DEBUG) {
+    Logger.log(message, ...args);
+  }
+}
+
+// ===========================================
+// USER & CONFIGURATION FUNCTIONS
+// ===========================================
+
+/**
+ * Get the current user's username (from Google account)
+ * Returns the part before @ in their email
+ */
+function getCurrentUsername() {
+  const userName = Session.getActiveUser().getUsername();
+  if (!userName) {
+    throw new Error('Unable to determine current user name');
+  }
+  return userName;
+}
+
+/**
+ * Get user-specific sheet name (e.g., "Jira - bmichael")
+ */
+function getUserSheetName() {
+  return `${SHEET_BASE_NAME} - ${getCurrentUsername()}`;
+}
+
+/**
+ * Get the Jira filter ID for the current user from User_Mapping named range
+ * Returns the filter ID or throws an error if user not found
+ */
+function getUserFilterId() {
+  const userName = getCurrentUsername();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  try {
+    const mappingRange = spreadsheet.getRangeByName('User_Mapping');
+    if (!mappingRange) {
+      throw new Error('User_Mapping named range not found. Please create it in the Guidance sheet.');
+    }
+    
+    const mappingData = mappingRange.getValues();
+    
+    // Search for the current user in the mapping
+    for (let i = 0; i < mappingData.length; i++) {
+      const mappedUser = mappingData[i][0];
+      const filterId = mappingData[i][1];
+      
+      if (mappedUser && mappedUser.toString().toLowerCase() === userName.toLowerCase()) {
+        Logger.log('Found filter ID %s for user %s', filterId, userName);
+        return filterId;
+      }
+    }
+    
+    // User not found in mapping
+    throw new Error(`No Jira filter configured for user "${userName}". Please add your username and filter ID to the User_Mapping range in the Guidance sheet.`);
+    
+  } catch (error) {
+    Logger.log('Error looking up user filter: %s', error.message);
+    throw error;
+  }
+}
+
+// ===========================================
+// FIELD DISCOVERY FUNCTIONS
+// ===========================================
 
 /**
  * Discover available Jira fields (run once to configure JIRA_FIELDS)
+ * Uses the current user's filter ID from User_Mapping
  */
 function discoverFields() {
   try {
-    const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${FILTER_ID}&maxResults=1`;
+    const filterId = getUserFilterId();
+    const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${filterId}&maxResults=1`;
     
     const response = UrlFetchApp.fetch(url, {
       headers: {

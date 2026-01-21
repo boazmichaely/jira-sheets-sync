@@ -88,33 +88,46 @@ function testConnectionWithNotification() {
 
 /**
  * Open Jira filter in new browser tab
+ * Uses the current user's filter ID from User_Mapping
  */
 function openJiraFilter() {
-  const filterUrl = `${JIRA_BASE_URL}/issues/?filter=${FILTER_ID}`;
-  const html = `
-    <script>
-      window.open('${filterUrl}', '_blank');
-      google.script.host.close();
-    </script>
-  `;
-  
-  const htmlOutput = HtmlService.createHtmlOutput(html)
-    .setWidth(1)
-    .setHeight(1);
-  
-  SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Opening Jira Filter...');
+  try {
+    const filterId = getUserFilterId();
+    const filterUrl = `${JIRA_BASE_URL}/issues/?filter=${filterId}`;
+    const html = `
+      <script>
+        window.open('${filterUrl}', '_blank');
+        google.script.host.close();
+      </script>
+    `;
+    
+    const htmlOutput = HtmlService.createHtmlOutput(html)
+      .setWidth(1)
+      .setHeight(1);
+    
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Opening Jira Filter...');
+  } catch (error) {
+    SpreadsheetApp.getUi().alert('Error: ' + error.message);
+  }
 }
 
 /**
  * Get current configuration for display
  */
 function getCurrentConfig() {
+  let filterId;
+  try {
+    filterId = getUserFilterId();
+  } catch (e) {
+    filterId = 'Not configured';
+  }
+  
   return {
-    filterId: FILTER_ID,
+    filterId: filterId,
     maxResults: MAX_RESULTS,
     sheetName: getUserSheetName(),
     baseUrl: JIRA_BASE_URL,
-    userName: Session.getActiveUser().getUsername()
+    userName: getCurrentUsername()
   };
 }
 
