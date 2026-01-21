@@ -11,6 +11,7 @@ const JIRA_BASE_URL = 'https://issues.redhat.com';
 const SHEET_BASE_NAME = 'Jira';
 const MAX_RESULTS = 300; // Maximum number of issues to fetch from Jira
 const DEBUG = false; // Set to true to enable debug logging
+const TESTUSER = ''; // Set to a username to simulate that user (for testing), leave empty for real user
 
 // === FIELD CONFIGURATION ===
 // Each field defines both the Jira field name and the display header

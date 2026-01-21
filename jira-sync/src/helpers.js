@@ -22,13 +22,48 @@ function logDebug(message, ...args) {
 /**
  * Get the current user's username (from Google account)
  * Returns the part before @ in their email
+ * If TESTUSER is set in config.js, returns that instead (for testing)
  */
 function getCurrentUsername() {
+  // Use TESTUSER if set (for testing), otherwise real user
+  if (typeof TESTUSER !== 'undefined' && TESTUSER) {
+    // Validate TESTUSER exists in User_Mapping
+    const filterId = validateAndGetFilterId(TESTUSER);
+    Logger.log('⚠️ TEST MODE: Simulating user "%s" (filter ID: %s)', TESTUSER, filterId);
+    return TESTUSER;
+  }
+  
   const userName = Session.getActiveUser().getUsername();
   if (!userName) {
     throw new Error('Unable to determine current user name');
   }
   return userName;
+}
+
+/**
+ * Validate a username exists in User_Mapping and return their filter ID
+ * Used for TESTUSER validation
+ */
+function validateAndGetFilterId(userName) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  const mappingRange = spreadsheet.getRangeByName('User_Mapping');
+  if (!mappingRange) {
+    throw new Error('User_Mapping named range not found.');
+  }
+  
+  const mappingData = mappingRange.getValues();
+  
+  for (let i = 0; i < mappingData.length; i++) {
+    const mappedUser = mappingData[i][0];
+    const filterId = mappingData[i][1];
+    
+    if (mappedUser && mappedUser.toString().toLowerCase() === userName.toLowerCase()) {
+      return filterId;
+    }
+  }
+  
+  throw new Error(`TESTUSER "${userName}" not found in User_Mapping. Please add this user to the Guidance sheet.`);
 }
 
 /**

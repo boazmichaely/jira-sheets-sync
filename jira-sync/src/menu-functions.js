@@ -92,8 +92,12 @@ function testConnectionWithNotification() {
  */
 function openJiraFilter() {
   try {
+    const currentUser = getCurrentUsername();
     const filterId = getUserFilterId();
     const filterUrl = `${JIRA_BASE_URL}/issues/?filter=${filterId}`;
+    
+    Logger.log('Opening Jira filter for user "%s": filter ID %s', currentUser, filterId);
+    
     const html = `
       <script>
         window.open('${filterUrl}', '_blank');
