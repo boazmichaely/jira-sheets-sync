@@ -234,22 +234,25 @@ function applyRiceToRows(sheet, startRow, rowCount) {
   // Set default values for all rows at once
   sheet.getRange(startRow, riceStartColumn, rowCount, 4).setValues(defaultData);
   
-  // Setup dropdowns for all rows at once
-  const impactRange = spreadsheet.getRange('Guidance!$A$8:$A$11');
+  // Setup dropdowns for all rows at once using named ranges (first column only)
+  const impactMapping = spreadsheet.getRangeByName('Impact_Mapping');
+  const impactRange = impactMapping.offset(0, 0, impactMapping.getNumRows(), 1);
   const impactRule = SpreadsheetApp.newDataValidation()
     .requireValueInRange(impactRange)
     .setAllowInvalid(false)
     .build();
   sheet.getRange(startRow, riceStartColumn + 1, rowCount).setDataValidation(impactRule);
   
-  const confidenceRange = spreadsheet.getRange('Guidance!$D$8:$D$13');
+  const confidenceMapping = spreadsheet.getRangeByName('Confidence_Mapping');
+  const confidenceRange = confidenceMapping.offset(0, 0, confidenceMapping.getNumRows(), 1);
   const confidenceRule = SpreadsheetApp.newDataValidation()
     .requireValueInRange(confidenceRange)
     .setAllowInvalid(false)
     .build();
   sheet.getRange(startRow, riceStartColumn + 2, rowCount).setDataValidation(confidenceRule);
   
-  const effortRange = spreadsheet.getRange('Guidance!$G$8:$G$12');
+  const effortMapping = spreadsheet.getRangeByName('Effort_Mapping');
+  const effortRange = effortMapping.offset(0, 0, effortMapping.getNumRows(), 1);
   const effortRule = SpreadsheetApp.newDataValidation()
     .requireValueInRange(effortRange)
     .setAllowInvalid(false)
@@ -410,177 +413,6 @@ function fetchJiraIssues() {
     return value.toString();
   }
   
-/**
- * Setup RICE columns for prioritization
- * Run this once for new user sheets to add RICE framework columns
- */
-function setupRiceColumns() {
-  try {
-    Logger.log('Setting up RICE columns...');
-    
-    // Get the currently active sheet
-    const sheet = SpreadsheetApp.getActiveSheet();
-    const sheetName = sheet.getName();
-    
-    // Show confirmation before modifying the active sheet
-    const ui = SpreadsheetApp.getUi();
-    const response = ui.alert(
-      'Setup RICE Columns',
-      `This will add RICE prioritization columns to the current sheet:\n"${sheetName}"\n\nColumns will be added after your existing data.\n\nProceed?`,
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (response !== ui.Button.OK) {
-      Logger.log('RICE setup cancelled by user');
-      return { success: false, message: 'Setup cancelled by user' };
-    }
-    
-    // Calculate starting column (after JIRA fields)
-    const riceStartColumn = JIRA_FIELDS.length + 1;
-    Logger.log('RICE columns starting at column: %s', riceStartColumn);
-    
-    // RICE column headers
-    const riceHeaders = ['Reach', 'Impact', 'Confidence', 'Effort', 'RICE Score'];
-    
-    // Add headers
-    sheet.getRange(1, riceStartColumn, 1, riceHeaders.length).setValues([riceHeaders]);
-    Logger.log('Added RICE headers: %s', riceHeaders.join(', '));
-    
-    // Format RICE headers (Reach, Impact, Confidence, Effort) with yellow background
-    const riceHeaderRange = sheet.getRange(1, riceStartColumn, 1, 4); // First 4 columns
-    riceHeaderRange
-      .setFontWeight('bold')
-      .setBackground('#ffff00'); // Yellow
-    Logger.log('Applied yellow formatting to RICE headers');
-    
-    // Format Score header with light magenta orange background  
-    const scoreHeaderRange = sheet.getRange(1, riceStartColumn + 4, 1, 1); // 5th column (Score)
-    scoreHeaderRange
-      .setFontWeight('bold')
-      .setBackground('#ffcc99'); // Light magenta orange
-    Logger.log('Applied light magenta orange formatting to Score header');
-    
-    // Calculate row count based on existing data
-    const lastRow = sheet.getLastRow();
-    const rowCount = lastRow > 1 ? lastRow - 1 : 1; // At least 1 row for dropdowns
-    
-    // Set up dropdowns for Impact, Confidence, and Effort, plus RICE Score formula
-    setupRiceDropdownsAndFormulas(sheet, riceStartColumn, rowCount);
-    
-    Logger.log('✅ RICE columns setup complete for %s rows!', rowCount);
-    
-    return {
-      success: true,
-      startColumn: riceStartColumn,
-      headers: riceHeaders
-    };
-    
-  } catch (error) {
-    Logger.log('❌ RICE setup failed: %s', error.message);
-    throw error;
-  }
-}
-
-/**
- * Setup dropdown validations for RICE columns and RICE Score formula
- * @param {Sheet} sheet - The sheet to set up
- * @param {number} startColumn - The first RICE column (Reach)
- * @param {number} rowCount - Number of data rows to apply dropdowns/formulas to
- */
-function setupRiceDropdownsAndFormulas(sheet, startColumn, rowCount) {
-  try {
-    // Column positions (relative to start column)
-    const reachColumn = startColumn;      // N - no dropdown  
-    const impactColumn = startColumn + 1; // O - Impact dropdown
-    const confidenceColumn = startColumn + 2; // P - Confidence dropdown
-    const effortColumn = startColumn + 3; // Q - Effort dropdown
-    
-    Logger.log('Setting up dropdowns at columns: Impact=%s, Confidence=%s, Effort=%s for %s rows', 
-               impactColumn, confidenceColumn, effortColumn, rowCount);
-    
-    // Get the spreadsheet to reference the Guidance sheet
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Setup Impact dropdown (Column O) - =Guidance!$A$8:$A$11
-    const impactRange = spreadsheet.getRange('Guidance!$A$8:$A$11');
-    const impactRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(impactRange)
-      .setAllowInvalid(false)
-      .setHelpText('Select impact level from guidance sheet')
-      .build();
-    sheet.getRange(2, impactColumn, rowCount).setDataValidation(impactRule);
-    Logger.log('✅ Impact dropdown configured (Column %s)', impactColumn);
-    
-    // Setup Confidence dropdown (Column P) - =Guidance!$D$8:$D$13
-    const confidenceRange = spreadsheet.getRange('Guidance!$D$8:$D$13');
-    const confidenceRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(confidenceRange)
-      .setAllowInvalid(false)
-      .setHelpText('Select confidence level from guidance sheet')
-      .build();
-    sheet.getRange(2, confidenceColumn, rowCount).setDataValidation(confidenceRule);
-    Logger.log('✅ Confidence dropdown configured (Column %s)', confidenceColumn);
-    
-    // Setup Effort dropdown (Column Q) - =Guidance!$G$8:$G$12
-    const effortRange = spreadsheet.getRange('Guidance!$G$8:$G$12');
-    const effortRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(effortRange)
-      .setAllowInvalid(false)
-      .setHelpText('Select effort level from guidance sheet')
-      .build();
-    sheet.getRange(2, effortColumn, rowCount).setDataValidation(effortRule);
-    Logger.log('✅ Effort dropdown configured (Column %s)', effortColumn);
-    
-    // Setup RICE Score formula (Column R)
-    const scoreColumn = startColumn + 4;
-    setupRiceScoreFormula(sheet, startColumn, scoreColumn, rowCount);
-    
-  } catch (error) {
-    Logger.log('❌ Dropdown setup failed: %s', error.message);
-    throw error;
-  }
-}
-
-/**
- * Setup RICE Score formula for the score column
- * @param {Sheet} sheet - The sheet to set up
- * @param {number} startColumn - The first RICE column (Reach)
- * @param {number} scoreColumn - The Score column number
- * @param {number} rowCount - Number of data rows to apply the formula to
- */
-function setupRiceScoreFormula(sheet, startColumn, scoreColumn, rowCount) {
-
-  // = Score_Weight * $N2 * (xlookup($O2, INDEX(Impact_Mapping,,1), INDEX(Impact_Mapping,,2) ) * Impact_Weight ) * (xlookup($P2,INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2))*Confidence_Weight) / (xlookup($Q2,INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2))*Effort_Weight)
-
-  try {
-    // Convert column numbers to letters for formula
-    const reachCol = columnToLetter(startColumn);
-    const impactCol = columnToLetter(startColumn + 1);
-    const confidenceCol = columnToLetter(startColumn + 2);
-    const effortCol = columnToLetter(startColumn + 3);
-    
-    Logger.log('Setting up RICE Score formula at column %s for %s rows using: Reach=%s, Impact=%s, Confidence=%s, Effort=%s', 
-               scoreColumn, rowCount, reachCol, impactCol, confidenceCol, effortCol);
-    
-    // Build the dynamic RICE Score formula
-    const scoreFormula = `=Score_Weight*(${reachCol}2 * (xlookup(${impactCol}2,INDEX(Impact_Mapping,,1),INDEX(Impact_Mapping,,2))*Impact_Weight) * (xlookup(${confidenceCol}2,INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2) ) * Confidence_Weight)) / (xlookup(${effortCol}2,INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2)) * Effort_Weight)`;
-    
-    // Apply formula to data rows starting from row 2
-    const scoreRange = sheet.getRange(2, scoreColumn, rowCount);
-    scoreRange.setFormula(scoreFormula);
-    
-    // Format Score column to show 2 decimal places
-    scoreRange.setNumberFormat('0.00');
-    Logger.log('Applied 2 decimal places formatting to Score column');
-    
-    Logger.log('✅ RICE Score formula applied: %s', scoreFormula);
-    
-  } catch (error) {
-    Logger.log('❌ RICE Score formula setup failed: %s', error.message);
-    throw error;
-  }
-}
-
 /**
  * Convert column number to letter (1=A, 2=B, ..., 26=Z, 27=AA, etc.)
  */

@@ -1,6 +1,6 @@
 /**
  * Custom Menu Functions for Google Sheets
- * Creates a custom menu with sync and utility functions
+ * Creates a simple menu for Jira sync operations
  */
 
 /**
@@ -9,80 +9,26 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   
-  ui.createMenu('🔄 Jira Sync')
-    .addItem('📥 Sync Jira Issues', 'syncJiraIssuesWithNotification')
-    .addItem('🔧 View/Edit Jira Filter', 'openJiraFilter')
-    .addSeparator()
-    .addItem('📊 Setup RICE Columns', 'setupRiceColumnsWithNotification')
-    .addSeparator()
-    .addItem('🎛️ Show Sidebar', 'showSidebar')
+  ui.createMenu('Jira Sync')
+    .addItem('🔍 View your filter', 'openJiraFilter')
+    .addItem('🔄 Sync your issues', 'syncJiraIssuesWithNotification')
     .addToUi();
 }
 
 /**
- * Wrapper function that shows user-friendly notifications
+ * Sync Jira issues with user-friendly notifications
  */
 function syncJiraIssuesWithNotification() {
   try {
-    // Show "working" toast
-    SpreadsheetApp.getActiveSpreadsheet().toast('Syncing with Jira...', '🔄 Sync in Progress', -1);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Syncing with Jira...', 'Sync in Progress', -1);
     
-    // Run the actual sync
     syncJiraIssues();
     
-    // Show success notification
-    SpreadsheetApp.getActiveSpreadsheet().toast('Sync completed successfully!', '✅ Success', 5);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Sync completed successfully!', 'Success', 5);
     
   } catch (error) {
-    // Show error notification
-    SpreadsheetApp.getActiveSpreadsheet().toast(`Sync failed: ${error.message}`, '❌ Error', 10);
+    SpreadsheetApp.getActiveSpreadsheet().toast(`Sync failed: ${error.message}`, 'Error', 10);
     Logger.log(`Sync error: ${error.message}`);
-  }
-}
-
-/**
- * Setup RICE columns with user notification
- */
-function setupRiceColumnsWithNotification() {
-  try {
-    // Run the actual setup (includes its own confirmation dialog)
-    const result = setupRiceColumns();
-    
-    // Handle the result
-    if (result && result.success === false) {
-      // User cancelled - show neutral message
-      SpreadsheetApp.getActiveSpreadsheet().toast(result.message || 'RICE setup cancelled', 'ℹ️ Cancelled', 3);
-    } else {
-      // Show working toast only after user confirms
-      SpreadsheetApp.getActiveSpreadsheet().toast('Setting up RICE columns...', '📊 Setup in Progress', 2);
-      
-      // Show success notification  
-      SpreadsheetApp.getActiveSpreadsheet().toast('RICE columns setup completed successfully!', '✅ Success', 5);
-    }
-    
-  } catch (error) {
-    // Show error notification for actual errors
-    SpreadsheetApp.getActiveSpreadsheet().toast(`RICE setup failed: ${error.message}`, '❌ Error', 10);
-    Logger.log(`RICE setup error: ${error.message}`);
-  }
-}
-
-/**
- * Test connection with user notification
- */
-function testConnectionWithNotification() {
-  try {
-    SpreadsheetApp.getActiveSpreadsheet().toast('Testing Jira connection...', '🔍 Testing', -1);
-    
-    const success = testConnection();
-    
-    if (success) {
-      SpreadsheetApp.getActiveSpreadsheet().toast('Connection successful!', '✅ Connected', 5);
-    } else {
-      SpreadsheetApp.getActiveSpreadsheet().toast('Connection failed. Check logs.', '❌ Failed', 5);
-    }
-  } catch (error) {
-    SpreadsheetApp.getActiveSpreadsheet().toast(`Test failed: ${error.message}`, '❌ Error', 10);
   }
 }
 
@@ -113,34 +59,4 @@ function openJiraFilter() {
   } catch (error) {
     SpreadsheetApp.getUi().alert('Error: ' + error.message);
   }
-}
-
-/**
- * Get current configuration for display
- */
-function getCurrentConfig() {
-  let filterId;
-  try {
-    filterId = getUserFilterId();
-  } catch (e) {
-    filterId = 'Not configured';
-  }
-  
-  return {
-    filterId: filterId,
-    maxResults: MAX_RESULTS,
-    sheetName: getUserSheetName(),
-    baseUrl: JIRA_BASE_URL,
-    userName: getCurrentUsername()
-  };
-}
-
-/**
- * Show the control panel sidebar
- */
-function showSidebar() {
-  const html = HtmlService.createHtmlOutputFromFile('sidebar')
-    .setTitle('Jira Sync Sidebar');
-  
-  SpreadsheetApp.getUi().showSidebar(html);
 }
