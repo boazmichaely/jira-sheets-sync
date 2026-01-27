@@ -74,11 +74,10 @@ function getUserSheetName() {
 }
 
 /**
- * Get the Jira filter ID for the current user from User_Mapping named range
- * Returns the filter ID or throws an error if user not found
+ * Get a filter ID from User_Mapping by key (username or special key like 'definition')
+ * Returns the filter ID or throws an error if key not found
  */
-function getUserFilterId() {
-  const userName = getCurrentUsername();
+function getFilterIdByKey(key) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   
   try {
@@ -89,24 +88,41 @@ function getUserFilterId() {
     
     const mappingData = mappingRange.getValues();
     
-    // Search for the current user in the mapping
+    // Search for the key in the mapping
     for (let i = 0; i < mappingData.length; i++) {
-      const mappedUser = mappingData[i][0];
+      const mappedKey = mappingData[i][0];
       const filterId = mappingData[i][1];
       
-      if (mappedUser && mappedUser.toString().toLowerCase() === userName.toLowerCase()) {
-        Logger.log('Found filter ID %s for user %s', filterId, userName);
+      if (mappedKey && mappedKey.toString().toLowerCase() === key.toLowerCase()) {
+        Logger.log('Found filter ID %s for key %s', filterId, key);
         return filterId;
       }
     }
     
-    // User not found in mapping
-    throw new Error(`No Jira filter configured for user "${userName}". Please add your username and filter ID to the User_Mapping range in the Guidance sheet.`);
+    // Key not found in mapping
+    throw new Error(`No Jira filter configured for "${key}". Please add it to the User_Mapping range in the Guidance sheet.`);
     
   } catch (error) {
-    Logger.log('Error looking up user filter: %s', error.message);
+    Logger.log('Error looking up filter for key "%s": %s', key, error.message);
     throw error;
   }
+}
+
+/**
+ * Get the Jira filter ID for the current user from User_Mapping named range
+ * Returns the filter ID or throws an error if user not found
+ */
+function getUserFilterId() {
+  const userName = getCurrentUsername();
+  return getFilterIdByKey(userName);
+}
+
+/**
+ * Get the Jira filter ID for the team sheet from User_Mapping
+ * Uses the TEAM_USER_KEY constant from config.js
+ */
+function getTeamFilterId() {
+  return getFilterIdByKey(TEAM_USER_KEY);
 }
 
 // ===========================================

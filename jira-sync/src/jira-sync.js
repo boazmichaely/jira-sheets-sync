@@ -18,7 +18,7 @@
  */
 
 /**
- * Main sync function - fetches Jira issues and updates Google Sheet
+ * Main sync function for current user - fetches Jira issues and updates Google Sheet
  * 
  * Sync logic:
  * 1. Maintain user's sort order
@@ -27,15 +27,35 @@
  * 4. Add new issues at end with default RICE values
  */
 function syncJiraIssues() {
+  const sheetName = getUserSheetName();
+  const filterId = getUserFilterId();
+  syncJiraIssuesCore(sheetName, filterId);
+}
+
+/**
+ * Sync function for team sheet - fetches all team issues to Jira-all sheet
+ */
+function syncTeamIssues() {
+  const sheetName = TEAM_SHEET_NAME;
+  const filterId = getTeamFilterId();
+  syncJiraIssuesCore(sheetName, filterId);
+}
+
+/**
+ * Core sync function - fetches Jira issues and updates Google Sheet
+ * @param {string} sheetName - Name of the target sheet
+ * @param {string} filterId - Jira filter ID to use
+ */
+function syncJiraIssuesCore(sheetName, filterId) {
   try {
     Logger.log('=== Starting Jira Sync ===');
+    Logger.log('Target sheet: %s, Filter ID: %s', sheetName, filterId);
     
     // Get or create the sheet
-    const sheet = getSheet();
+    const sheet = getSheetByName(sheetName);
     
     // Show confirmation before sync
     const ui = SpreadsheetApp.getUi();
-    const sheetName = getUserSheetName();
     const response = ui.alert(
       'Confirm Sync',
       `Ready to sync Jira issues to:\n"${sheetName}"\n\nThis will update the sheet with your current Jira filter results.\n\nProceed?`,
@@ -58,7 +78,7 @@ function syncJiraIssues() {
     
     // Step 1: Fetch issues from Jira
     logDebug(' Step 1 - Fetching issues from Jira...');
-    const jiraIssues = fetchJiraIssues();
+    const jiraIssues = fetchJiraIssuesWithFilter(filterId);
     if (!jiraIssues || jiraIssues.length === 0) {
       Logger.log('No issues found in Jira filter');
       return;
@@ -277,14 +297,13 @@ function applyRiceToRows(sheet, startRow, rowCount) {
 }
   
   /**
-   * Get the target sheet, create if it doesn't exist
+   * Get the target sheet by name, create if it doesn't exist
+   * @param {string} sheetName - Name of the target sheet
    */
-  function getSheet() {
+  function getSheetByName(sheetName) {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const currentUser = getCurrentUsername();
-    const sheetName = getUserSheetName();
     
-    Logger.log('Current user: %s, Target sheet: %s', currentUser, sheetName);
+    Logger.log('Target sheet: %s', sheetName);
     
     let sheet = spreadsheet.getSheetByName(sheetName);
     
@@ -293,7 +312,7 @@ function applyRiceToRows(sheet, startRow, rowCount) {
       const ui = SpreadsheetApp.getUi();
       const response = ui.alert(
         'Create New Sheet?',
-        `Sheet "${sheetName}" does not exist.\n\nDo you want to create it for your Jira sync?`,
+        `Sheet "${sheetName}" does not exist.\n\nDo you want to create it?`,
         ui.ButtonSet.OK_CANCEL
       );
       
@@ -363,6 +382,14 @@ function applyRiceToRows(sheet, startRow, rowCount) {
 */
 function fetchJiraIssues() {
   const filterId = getUserFilterId();
+  return fetchJiraIssuesWithFilter(filterId);
+}
+
+/**
+* Fetch issues from Jira ordered by Rank ASC with specified filter
+* @param {string} filterId - Jira filter ID to use
+*/
+function fetchJiraIssuesWithFilter(filterId) {
   const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${filterId} ORDER BY Rank ASC&maxResults=${MAX_RESULTS}&fields=${JIRA_FIELDS.join(',')}`;
   
   logDebug(' Fetching from Jira with filter ID: %s', filterId);

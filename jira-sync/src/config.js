@@ -13,6 +13,10 @@ const MAX_RESULTS = 300; // Maximum number of issues to fetch from Jira
 const DEBUG = false; // Set to true to enable debug logging
 const TESTUSER = ''; // Set to a username to simulate that user (for testing), leave empty for real user
 
+// === TEAM SYNC CONFIGURATION ===
+const TEAM_SHEET_NAME = 'Jira-all';
+const TEAM_USER_KEY = 'definition';  // Key in User_Mapping for team filter
+
 // === FIELD CONFIGURATION ===
 // Each field defines both the Jira field name and the display header
 // Custom prioritization columns (Reach, Impact, Confidence, Effort, Score) go after these
@@ -26,6 +30,8 @@ const FIELD_CONFIG = [
   { field: 'issuetype',             header: 'Issue Type' },
   { field: 'components',            header: 'Components' },
   { field: 'customfield_12316752',  header: 'Product Manager' },
+  { field: 'assignee',              header: 'Assignee' },
+  { field: 'customfield_12313240',  header: 'Team' },
   { field: 'customfield_12311940',  header: 'Rank' },
   { field: 'reporter',              header: 'Reporter' },
   { field: 'assignee',              header: 'Assignee' },
