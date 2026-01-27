@@ -35,7 +35,8 @@ const FIELD_CONFIG = [
   { field: 'customfield_12311940',  header: 'Rank' },
   { field: 'reporter',              header: 'Reporter' },
   { field: 'assignee',              header: 'Assignee' },
-  { field: 'customfield_12319940',  header: 'Target Version' }
+  { field: 'customfield_12319940',  header: 'Target Version' },
+  { field: 'customfield_12320852',  header: 'Size' }
 ];
 
 // Helper arrays derived from FIELD_CONFIG

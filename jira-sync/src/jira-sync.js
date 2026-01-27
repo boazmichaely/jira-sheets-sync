@@ -23,8 +23,8 @@
  * Sync logic:
  * 1. Maintain user's sort order
  * 2. Delete rows for issues no longer in Jira
- * 3. Update Jira columns for existing issues (preserve RICE)
- * 4. Add new issues at end with default RICE values
+ * 3. Update Jira columns for existing issues (preserve PRICE)
+ * 4. Add new issues at end with default PRICE values
  */
 function syncJiraIssues() {
   const sheetName = getUserSheetName();
@@ -128,8 +128,22 @@ function syncJiraIssuesCore(sheetName, filterId) {
     const updatedSheetState = readSheetState(sheet);
     logDebug(' Sheet now has %s issues', Object.keys(updatedSheetState.issueRows).length);
     
-    // Step 6: Update existing issues in place (Jira columns only, preserve RICE)
+    // Step 6: Update existing issues in place (Jira columns only, preserve PRICE)
+    // Also update Effort from Size if Size is populated
     logDebug(' Step 6 - Updating existing issues in place...');
+    const priceStartColumn = JIRA_FIELDS.length + 1;
+    const effortColumn = priceStartColumn + 4;  // P, Reach, Impact, Confidence, Effort
+    const sizeColumnIndex = FIELD_CONFIG.findIndex(f => f.header === 'Size');
+    const sizeColumn = sizeColumnIndex >= 0 ? sizeColumnIndex + 1 : null;
+    
+    // Get Effort dropdown rule for rows without Size
+    const effortMapping = SpreadsheetApp.getActiveSpreadsheet().getRangeByName('Effort_Mapping');
+    const effortRange = effortMapping ? effortMapping.offset(0, 0, effortMapping.getNumRows(), 1) : null;
+    const effortRule = effortRange ? SpreadsheetApp.newDataValidation()
+      .requireValueInRange(effortRange)
+      .setAllowInvalid(false)
+      .build() : null;
+    
     toUpdate.forEach(key => {
       const row = updatedSheetState.issueRows[key];
       if (row) {
@@ -137,10 +151,30 @@ function syncJiraIssuesCore(sheetName, filterId) {
         const rowData = buildJiraRowData(issue, jiraRankMap[key]);
         sheet.getRange(row, 1, 1, rowData.length).setValues([rowData]);
         logDebug(' Updated row %s for %s', row, key);
+        
+        // Check if Size has a value and update Effort accordingly
+        if (sizeColumn) {
+          const sizeValue = sheet.getRange(row, sizeColumn).getValue();
+          const effortCell = sheet.getRange(row, effortColumn);
+          
+          if (sizeValue && sizeValue !== '') {
+            // Size exists: set Effort to Size, gray background, no dropdown
+            effortCell.setValue(sizeValue);
+            effortCell.setBackground('#d9d9d9');
+            effortCell.setDataValidation(null);
+            logDebug(' Row %s: Effort updated from Size (%s)', row, sizeValue);
+          } else {
+            // No Size: ensure yellow background and dropdown (in case Size was removed)
+            effortCell.setBackground('#ffff00');
+            if (effortRule) {
+              effortCell.setDataValidation(effortRule);
+            }
+          }
+        }
       }
     });
     
-    // Step 7: Add new issues at the end with default RICE values (batched for performance)
+    // Step 7: Add new issues at the end with default PRICE values (batched for performance)
     logDebug(' Step 7 - Adding new issues...');
     if (toAdd.length > 0) {
       const lastRow = sheet.getLastRow();
@@ -158,9 +192,9 @@ function syncJiraIssuesCore(sheetName, filterId) {
       sheet.getRange(startRow, 1, rowCount, allRowData[0].length).setValues(allRowData);
       logDebug(' Wrote %s rows of Jira data', rowCount);
       
-      // Apply RICE to all new rows in batch
+      // Apply PRICE to all new rows in batch
       applyRiceToRows(sheet, startRow, rowCount);
-      logDebug(' Applied RICE to %s new rows', rowCount);
+      logDebug(' Applied PRICE to %s new rows', rowCount);
     }
     
     // Step 8: Ensure headers are present
@@ -231,37 +265,75 @@ function buildJiraRowData(issue, rank) {
 }
 
 /**
- * Apply RICE columns (dropdowns, formula, defaults) to multiple rows at once (batched for performance)
+ * Apply PRICE columns (dropdowns, formula, defaults) to multiple rows at once (batched for performance)
+ * PRICE = P * Reach * Impact * Confidence / Effort
  */
 function applyRiceToRows(sheet, startRow, rowCount) {
-  const riceStartColumn = JIRA_FIELDS.length + 1;
+  const priceStartColumn = JIRA_FIELDS.length + 1;
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Column positions: P, Reach, Impact, Confidence, Effort, R(Val), I(Val), C(Val), E(Val), Score
+  const pColumn = priceStartColumn;
+  const reachColumn = priceStartColumn + 1;
+  const impactColumn = priceStartColumn + 2;
+  const confidenceColumn = priceStartColumn + 3;
+  const effortColumn = priceStartColumn + 4;
+  const reachValColumn = priceStartColumn + 5;
+  const impactValColumn = priceStartColumn + 6;
+  const confidenceValColumn = priceStartColumn + 7;
+  const effortValColumn = priceStartColumn + 8;
+  const scoreColumn = priceStartColumn + 9;
+  
+  // Find Size column (look for 'Size' header in FIELD_CONFIG)
+  const sizeColumnIndex = FIELD_CONFIG.findIndex(f => f.header === 'Size');
+  const sizeColumn = sizeColumnIndex >= 0 ? sizeColumnIndex + 1 : null;
+  
+  // Read Size values if Size column exists
+  let sizeValues = [];
+  if (sizeColumn) {
+    sizeValues = sheet.getRange(startRow, sizeColumn, rowCount, 1).getValues().map(row => row[0]);
+    logDebug(' Read Size values for %s rows: %s', rowCount, sizeValues.filter(v => v).length + ' have values');
+  }
   
   // Default values
   const defaults = {
-    reach: 1,
+    p: 1.0,
+    reach: 'Handful',
     impact: 'Nice to have',
-    confidence: 'Very low',
-    effort: 'XL'
+    confidence: 'Low',
+    effort: 'M'
   };
   
-  // Build default values array for all rows
+  // Build default values array - use Size for Effort when available
   const defaultData = [];
   for (let i = 0; i < rowCount; i++) {
-    defaultData.push([defaults.reach, defaults.impact, defaults.confidence, defaults.effort]);
+    const effortValue = (sizeValues[i] && sizeValues[i] !== '') ? sizeValues[i] : defaults.effort;
+    defaultData.push([defaults.p, defaults.reach, defaults.impact, defaults.confidence, effortValue]);
   }
   
-  // Set default values for all rows at once
-  sheet.getRange(startRow, riceStartColumn, rowCount, 4).setValues(defaultData);
+  // Set default values for all rows at once (P, Reach, Impact, Confidence, Effort)
+  sheet.getRange(startRow, priceStartColumn, rowCount, 5).setValues(defaultData);
   
-  // Setup dropdowns for all rows at once using named ranges (first column only)
+  // Format P column with 2 decimal places
+  sheet.getRange(startRow, pColumn, rowCount).setNumberFormat('0.00');
+  
+  // Setup dropdown for Reach (all rows)
+  const reachMapping = spreadsheet.getRangeByName('Reach_Mapping');
+  const reachRange = reachMapping.offset(0, 0, reachMapping.getNumRows(), 1);
+  const reachRule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(reachRange)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(startRow, reachColumn, rowCount).setDataValidation(reachRule);
+  
+  // Setup dropdowns for Impact and Confidence (all rows)
   const impactMapping = spreadsheet.getRangeByName('Impact_Mapping');
   const impactRange = impactMapping.offset(0, 0, impactMapping.getNumRows(), 1);
   const impactRule = SpreadsheetApp.newDataValidation()
     .requireValueInRange(impactRange)
     .setAllowInvalid(false)
     .build();
-  sheet.getRange(startRow, riceStartColumn + 1, rowCount).setDataValidation(impactRule);
+  sheet.getRange(startRow, impactColumn, rowCount).setDataValidation(impactRule);
   
   const confidenceMapping = spreadsheet.getRangeByName('Confidence_Mapping');
   const confidenceRange = confidenceMapping.offset(0, 0, confidenceMapping.getNumRows(), 1);
@@ -269,31 +341,73 @@ function applyRiceToRows(sheet, startRow, rowCount) {
     .requireValueInRange(confidenceRange)
     .setAllowInvalid(false)
     .build();
-  sheet.getRange(startRow, riceStartColumn + 2, rowCount).setDataValidation(confidenceRule);
+  sheet.getRange(startRow, confidenceColumn, rowCount).setDataValidation(confidenceRule);
   
+  // Setup Effort dropdown and formatting based on Size
   const effortMapping = spreadsheet.getRangeByName('Effort_Mapping');
   const effortRange = effortMapping.offset(0, 0, effortMapping.getNumRows(), 1);
   const effortRule = SpreadsheetApp.newDataValidation()
     .requireValueInRange(effortRange)
     .setAllowInvalid(false)
     .build();
-  sheet.getRange(startRow, riceStartColumn + 3, rowCount).setDataValidation(effortRule);
   
-  // Setup RICE Score formula for all rows at once
-  const reachCol = columnToLetter(riceStartColumn);
-  const impactCol = columnToLetter(riceStartColumn + 1);
-  const confidenceCol = columnToLetter(riceStartColumn + 2);
-  const effortCol = columnToLetter(riceStartColumn + 3);
-  const scoreColumn = riceStartColumn + 4;
+  // Apply Effort formatting row by row based on Size
+  for (let i = 0; i < rowCount; i++) {
+    const row = startRow + i;
+    const effortCell = sheet.getRange(row, effortColumn);
+    
+    if (sizeValues[i] && sizeValues[i] !== '') {
+      // Size exists: gray background, no dropdown (read-only appearance)
+      effortCell.setBackground('#d9d9d9');
+      effortCell.setDataValidation(null);  // Remove dropdown
+      logDebug(' Row %s: Effort set from Size (%s), grayed out', row, sizeValues[i]);
+    } else {
+      // No Size: yellow background, add dropdown
+      effortCell.setBackground('#ffff00');
+      effortCell.setDataValidation(effortRule);
+    }
+  }
   
-  // Formula uses row 2 reference - Google Sheets will auto-adjust for each row
-  const scoreFormula = `=Score_Weight*(${reachCol}${startRow} * (xlookup(${impactCol}${startRow},INDEX(Impact_Mapping,,1),INDEX(Impact_Mapping,,2))*Impact_Weight) * (xlookup(${confidenceCol}${startRow},INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2) ) * Confidence_Weight)) / (xlookup(${effortCol}${startRow},INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2)) * Effort_Weight)`;
+  // Column letters for formulas
+  const pCol = columnToLetter(pColumn);
+  const reachCol = columnToLetter(reachColumn);
+  const impactCol = columnToLetter(impactColumn);
+  const confidenceCol = columnToLetter(confidenceColumn);
+  const effortCol = columnToLetter(effortColumn);
+  const reachValCol = columnToLetter(reachValColumn);
+  const impactValCol = columnToLetter(impactValColumn);
+  const confidenceValCol = columnToLetter(confidenceValColumn);
+  const effortValCol = columnToLetter(effortValColumn);
+  
+  // Setup Value column formulas
+  // Reach (Value) = XLOOKUP(Reach, mapping) * Reach_Weight * P
+  const reachValFormula = `=XLOOKUP(${reachCol}${startRow},INDEX(Reach_Mapping,,1),INDEX(Reach_Mapping,,2))*Reach_Weight*${pCol}${startRow}`;
+  sheet.getRange(startRow, reachValColumn, rowCount).setFormula(reachValFormula);
+  
+  // Impact (Value) = XLOOKUP(Impact, mapping) * Impact_Weight * P
+  const impactValFormula = `=XLOOKUP(${impactCol}${startRow},INDEX(Impact_Mapping,,1),INDEX(Impact_Mapping,,2))*Impact_Weight*${pCol}${startRow}`;
+  sheet.getRange(startRow, impactValColumn, rowCount).setFormula(impactValFormula);
+  
+  // Confidence (Value) = XLOOKUP(Confidence, mapping) * Confidence_Weight (no P multiplier)
+  const confidenceValFormula = `=XLOOKUP(${confidenceCol}${startRow},INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2))*Confidence_Weight`;
+  sheet.getRange(startRow, confidenceValColumn, rowCount).setFormula(confidenceValFormula);
+  
+  // Effort (Value) = XLOOKUP(Effort, mapping) * Effort_Weight (no P multiplier)
+  const effortValFormula = `=XLOOKUP(${effortCol}${startRow},INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2))*Effort_Weight`;
+  sheet.getRange(startRow, effortValColumn, rowCount).setFormula(effortValFormula);
+  
+  // Format Value columns with light blue background
+  sheet.getRange(startRow, reachValColumn, rowCount, 4).setBackground('#cfe2f3');
+  
+  // Setup PRICE Score formula: (R_val * I_val * C_val) / E_val
+  // Note: P is already factored into R_val and I_val
+  const scoreFormula = `=(${reachValCol}${startRow}*${impactValCol}${startRow}*${confidenceValCol}${startRow})/${effortValCol}${startRow}`;
   
   const scoreRange = sheet.getRange(startRow, scoreColumn, rowCount);
   scoreRange.setFormula(scoreFormula);
   scoreRange.setNumberFormat('0.00');
   
-  logDebug(' Applied RICE (defaults, dropdowns, formula) to rows %s-%s', startRow, startRow + rowCount - 1);
+  logDebug(' Applied PRICE (defaults, dropdowns, formulas) to rows %s-%s', startRow, startRow + rowCount - 1);
 }
   
   /**
@@ -346,29 +460,36 @@ function applyRiceToRows(sheet, startRow, rowCount) {
       sheet.getRange('A1').activate(); // Set active cell to A1
       Logger.log('Set active cell to A1');
       
-      // Setup RICE column headers only (dropdowns/formulas applied after data is written)
-      Logger.log('Setting up RICE headers for new sheet...');
-      const riceStartColumn = JIRA_FIELDS.length + 1;
-      const riceHeaders = ['Reach', 'Impact', 'Confidence', 'Effort', 'RICE Score'];
+      // Setup PRICE column headers only (dropdowns/formulas applied after data is written)
+      Logger.log('Setting up PRICE headers for new sheet...');
+      const priceStartColumn = JIRA_FIELDS.length + 1;
+      const priceHeaders = ['PM', 'Reach', 'Impact', 'Confidence', 'Effort', 
+                           'Reach (Value)', 'Impact (Value)', 'Confidence (Value)', 'Effort (Value)', 
+                           '(P)RICE Score'];
       
-      // Add RICE headers
-      sheet.getRange(1, riceStartColumn, 1, riceHeaders.length).setValues([riceHeaders]);
-      Logger.log('Added RICE headers: %s', riceHeaders.join(', '));
+      // Add PRICE headers
+      sheet.getRange(1, priceStartColumn, 1, priceHeaders.length).setValues([priceHeaders]);
+      Logger.log('Added PRICE headers: %s', priceHeaders.join(', '));
       
-      // Format RICE headers (Reach, Impact, Confidence, Effort) with yellow background
-      sheet.getRange(1, riceStartColumn, 1, 4)
+      // Format PRICE input headers (P, Reach, Impact, Confidence, Effort) with yellow background
+      sheet.getRange(1, priceStartColumn, 1, 5)
         .setFontWeight('bold')
         .setBackground('#ffff00');
       
-      // Format Score header with light magenta orange background
-      sheet.getRange(1, riceStartColumn + 4, 1, 1)
+      // Format Value headers with light blue background (read-only computed columns)
+      sheet.getRange(1, priceStartColumn + 5, 1, 4)
+        .setFontWeight('bold')
+        .setBackground('#cfe2f3');
+      
+      // Format Score header with light magenta orange background (at the end)
+      sheet.getRange(1, priceStartColumn + 9, 1, 1)
         .setFontWeight('bold')
         .setBackground('#ffcc99');
       
-      // Note: RICE dropdowns and formulas are applied after data is written
-      // by ensureRiceColumnsForDataRows() in syncJiraIssues()
+      // Note: PRICE dropdowns and formulas are applied after data is written
+      // by applyRiceToRows() in syncJiraIssues()
       
-      Logger.log('✅ Sheet initialization complete (RICE formulas applied after data sync)');
+      Logger.log('✅ Sheet initialization complete (PRICE formulas applied after data sync)');
       
     } catch (error) {
       Logger.log('❌ Sheet initialization failed: %s', error.message);
@@ -427,9 +548,9 @@ function fetchJiraIssuesWithFilter(filterId) {
   function extractSimpleValue(value) {
     if (!value) return '';
     
-    // Handle objects (status, user fields, etc.)
+    // Handle objects (status, user fields, option fields, etc.)
     if (typeof value === 'object' && !Array.isArray(value)) {
-      return value.displayName || value.name || value.emailAddress || '';
+      return value.displayName || value.name || value.value || value.emailAddress || '';
     }
     
     // Handle arrays (labels, components)
