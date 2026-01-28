@@ -15,6 +15,8 @@ function onOpen() {
     .addSeparator()
     .addItem('🔍 View "all" filter', 'openTeamFilter')
     .addItem('👥 Sync "all" sheet', 'syncTeamIssuesWithNotification')
+    .addSeparator()
+    .addItem('⬆️ Push RICE to Jira', 'pushRiceToJiraWithNotification')
     .addToUi();
 }
 
@@ -106,5 +108,43 @@ function syncTeamIssuesWithNotification() {
   } catch (error) {
     SpreadsheetApp.getActiveSpreadsheet().toast(`Team sync failed: ${error.message}`, 'Error', 10);
     Logger.log(`Team sync error: ${error.message}`);
+  }
+}
+
+/**
+ * Push RICE values to Jira with user-friendly notifications
+ * Only pushes rows where Sync Status = "≠"
+ */
+function pushRiceToJiraWithNotification() {
+  try {
+    const result = pushRiceToJira();
+    
+    if (result.cancelled) {
+      // User cancelled - no notification needed
+      return;
+    }
+    
+    if (result.count === 0) {
+      // No issues to push - alert already shown in pushRiceToJira
+      return;
+    }
+    
+    if (result.success) {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        `Successfully updated ${result.successCount} issue(s)!`, 
+        'Push Complete', 
+        5
+      );
+    } else {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        `Updated ${result.successCount} of ${result.total} issues. Check logs for details.`, 
+        'Push Partial', 
+        10
+      );
+    }
+    
+  } catch (error) {
+    SpreadsheetApp.getActiveSpreadsheet().toast(`Push failed: ${error.message}`, 'Error', 10);
+    Logger.log(`Push RICE error: ${error.message}`);
   }
 }

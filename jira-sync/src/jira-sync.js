@@ -42,11 +42,201 @@ function syncTeamIssues() {
 }
 
 /**
+ * Push RICE values from sheet to Jira for out-of-sync issues
+ * Only pushes rows where Sync Status = "≠"
+ */
+function pushRiceToJira() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getActiveSheet();
+  const ui = SpreadsheetApp.getUi();
+  
+  // RICE field IDs in Jira
+  const RICE_FIELD_IDS = {
+    reach: 'customfield_12320846',
+    impact: 'customfield_12320740',
+    confidence: 'customfield_12320847',
+    effort: 'customfield_12320848'
+  };
+  
+  try {
+    Logger.log('=== Push RICE to Jira ===');
+    
+    // Find column positions by header name
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const keyCol = headers.indexOf('Key') + 1;
+    const reachValCol = headers.indexOf('Reach (Value)') + 1;
+    const impactValCol = headers.indexOf('Impact (Value)') + 1;
+    const confidenceCol = headers.indexOf('Confidence') + 1;  // Dropdown column for ID lookup
+    const effortValCol = headers.indexOf('Effort (Value)') + 1;
+    const syncStatusCol = headers.indexOf('Sync Status') + 1;
+    
+    if (!keyCol || !reachValCol || !impactValCol || !confidenceCol || !effortValCol || !syncStatusCol) {
+      throw new Error('Required columns not found. Make sure sheet has RICE columns and Sync Status.');
+    }
+    
+    // Read all data rows
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      ui.alert('No data rows to push.');
+      return { success: true, count: 0 };
+    }
+    
+    const dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+    const allData = dataRange.getValues();
+    
+    // Find rows where Sync Status = "≠"
+    const outOfSyncRows = [];
+    for (let i = 0; i < allData.length; i++) {
+      const syncStatus = allData[i][syncStatusCol - 1];
+      if (syncStatus === '≠') {
+        const keyCell = allData[i][keyCol - 1];
+        // Extract issue key from hyperlink formula if needed
+        let issueKey = keyCell;
+        if (typeof keyCell === 'string' && keyCell.includes('HYPERLINK')) {
+          const match = keyCell.match(/"([^"]+)"\s*\)$/);
+          if (match) issueKey = match[1];
+        }
+        
+        outOfSyncRows.push({
+          row: i + 2,  // Actual row number (1-based, after header)
+          issueKey: issueKey,
+          reach: allData[i][reachValCol - 1],
+          impact: allData[i][impactValCol - 1],
+          confidence: allData[i][confidenceCol - 1],  // Dropdown value for lookup
+          effort: allData[i][effortValCol - 1]
+        });
+      }
+    }
+    
+    if (outOfSyncRows.length === 0) {
+      ui.alert('All issues are in sync. Nothing to push.');
+      return { success: true, count: 0 };
+    }
+    
+    // Confirmation dialog
+    let confirmMessage = `Push RICE values for ${outOfSyncRows.length} out-of-sync issue(s) to Jira?`;
+    if (outOfSyncRows.length > 1) {
+      confirmMessage += '\n\nThis may take a few seconds, please be patient.';
+    }
+    
+    const response = ui.alert('Confirm Push', confirmMessage, ui.ButtonSet.OK_CANCEL);
+    if (response !== ui.Button.OK) {
+      Logger.log('Push cancelled by user');
+      return { success: false, cancelled: true };
+    }
+    
+    // Get Confidence mapping for ID lookup (column 1 = dropdown value, column 4 = Jira ID)
+    const confidenceMapping = spreadsheet.getRangeByName('Confidence_Mapping');
+    const confidenceData = confidenceMapping.getValues();
+    
+    // Build confidence value to ID map
+    const confidenceIdMap = {};
+    for (let i = 0; i < confidenceData.length; i++) {
+      const dropdownValue = confidenceData[i][0];  // Column 1: dropdown value
+      const jiraId = confidenceData[i][3];          // Column 4: Jira ID
+      if (dropdownValue && jiraId !== undefined) {
+        confidenceIdMap[dropdownValue] = jiraId.toString();
+      }
+    }
+    Logger.log('Confidence ID map: %s', JSON.stringify(confidenceIdMap));
+    
+    // Push each issue
+    const results = [];
+    const totalIssues = outOfSyncRows.length;
+    
+    spreadsheet.toast(
+      `Pushing RICE values for ${totalIssues} issues...`,
+      'Push RICE to Jira',
+      -1
+    );
+    
+    for (let i = 0; i < outOfSyncRows.length; i++) {
+      const issue = outOfSyncRows[i];
+      const issueNum = i + 1;
+      
+      // Progress notification
+      spreadsheet.toast(
+        `Writing issue ${issueNum} out of ${totalIssues} (${issue.issueKey})...`,
+        'Push RICE to Jira',
+        -1
+      );
+      Logger.log('Writing issue %s out of %s (%s)...', issueNum, totalIssues, issue.issueKey);
+      
+      try {
+        // Convert confidence to Jira ID
+        const confidenceId = confidenceIdMap[issue.confidence];
+        if (confidenceId === undefined) {
+          throw new Error(`Unknown confidence value: ${issue.confidence}`);
+        }
+        
+        const payload = {
+          fields: {
+            [RICE_FIELD_IDS.reach]: issue.reach,
+            [RICE_FIELD_IDS.impact]: issue.impact,
+            [RICE_FIELD_IDS.confidence]: { id: confidenceId },
+            [RICE_FIELD_IDS.effort]: issue.effort
+          }
+        };
+        
+        const url = `${JIRA_BASE_URL}/rest/api/2/issue/${issue.issueKey}`;
+        
+        const response = UrlFetchApp.fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${JIRA_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        });
+        
+        const responseCode = response.getResponseCode();
+        
+        if (responseCode >= 200 && responseCode < 300) {
+          Logger.log('  ✅ %s updated successfully', issue.issueKey);
+          results.push({ issueKey: issue.issueKey, success: true });
+        } else {
+          const responseBody = response.getContentText();
+          Logger.log('  ❌ %s failed: %s', issue.issueKey, responseBody);
+          results.push({ issueKey: issue.issueKey, success: false, error: responseBody });
+        }
+        
+      } catch (error) {
+        Logger.log('  ❌ %s error: %s', issue.issueKey, error.message);
+        results.push({ issueKey: issue.issueKey, success: false, error: error.message });
+      }
+    }
+    
+    // Summary
+    const successCount = results.filter(r => r.success).length;
+    Logger.log('=== Push Complete: %s of %s successful ===', successCount, totalIssues);
+    
+    // Re-sync to update Sync Status (skip confirmation since user already confirmed push)
+    spreadsheet.toast('Re-syncing to update status...', 'Push RICE to Jira', -1);
+    const sheetName = sheet.getName();
+    const filterId = sheetName === TEAM_SHEET_NAME ? getTeamFilterId() : getUserFilterId();
+    syncJiraIssuesCore(sheetName, filterId, true);
+    
+    return {
+      success: successCount === totalIssues,
+      total: totalIssues,
+      successCount: successCount,
+      results: results
+    };
+    
+  } catch (error) {
+    Logger.log('ERROR: Push failed: %s', error.message);
+    throw error;
+  }
+}
+
+/**
  * Core sync function - fetches Jira issues and updates Google Sheet
  * @param {string} sheetName - Name of the target sheet
  * @param {string} filterId - Jira filter ID to use
+ * @param {boolean} skipConfirmation - If true, skip the confirmation dialog
  */
-function syncJiraIssuesCore(sheetName, filterId) {
+function syncJiraIssuesCore(sheetName, filterId, skipConfirmation) {
   try {
     Logger.log('=== Starting Jira Sync ===');
     Logger.log('Target sheet: %s, Filter ID: %s', sheetName, filterId);
@@ -54,17 +244,19 @@ function syncJiraIssuesCore(sheetName, filterId) {
     // Get or create the sheet
     const sheet = getSheetByName(sheetName);
     
-    // Show confirmation before sync
-    const ui = SpreadsheetApp.getUi();
-    const response = ui.alert(
-      'Confirm Sync',
-      `Ready to sync Jira issues to:\n"${sheetName}"\n\nThis will update the sheet with your current Jira filter results.\n\nProceed?`,
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (response !== ui.Button.OK) {
-      Logger.log('Sync cancelled by user');
-      return;
+    // Show confirmation before sync (unless skipped)
+    if (!skipConfirmation) {
+      const ui = SpreadsheetApp.getUi();
+      const response = ui.alert(
+        'Confirm Sync',
+        `Ready to sync Jira issues to:\n"${sheetName}"\n\nThis will update the sheet with your current Jira filter results.\n\nProceed?`,
+        ui.ButtonSet.OK_CANCEL
+      );
+      
+      if (response !== ui.Button.OK) {
+        Logger.log('Sync cancelled by user');
+        return;
+      }
     }
     
     // Clear any active filter criteria but keep filter dropdowns
