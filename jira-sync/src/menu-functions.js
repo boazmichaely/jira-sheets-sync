@@ -12,11 +12,10 @@ function onOpen() {
   ui.createMenu('Jira Sync')
     .addItem('🔍 View your filter', 'openJiraFilter')
     .addItem('🔄 Sync your issues', 'syncJiraIssuesWithNotification')
+    .addItem('⬆️ Push your RICE to Jira', 'pushRiceToJiraWithNotification')
     .addSeparator()
     .addItem('🔍 View "all" filter', 'openTeamFilter')
-    .addItem('👥 Sync "all" sheet', 'syncTeamIssuesWithNotification')
-    .addSeparator()
-    .addItem('⬆️ Push RICE to Jira', 'pushRiceToJiraWithNotification')
+    .addItem('🔄 Update "all" sheet', 'refreshTeamSheetWithNotification')
     .addToUi();
 }
 
@@ -95,19 +94,20 @@ function openTeamFilter() {
 }
 
 /**
- * Sync team Jira issues with user-friendly notifications
+ * Refresh team sheet with user-friendly notifications
+ * Pure read-only view of all team issues from Jira
  */
-function syncTeamIssuesWithNotification() {
+function refreshTeamSheetWithNotification() {
   try {
-    SpreadsheetApp.getActiveSpreadsheet().toast('Syncing team issues with Jira...', 'Sync in Progress', -1);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Refreshing team sheet from Jira...', 'Refresh in Progress', -1);
     
-    syncTeamIssues();
+    refreshTeamSheet();
     
-    SpreadsheetApp.getActiveSpreadsheet().toast('Team sync completed successfully!', 'Success', 5);
+    // Toast is shown by refreshTeamSheet itself
     
   } catch (error) {
-    SpreadsheetApp.getActiveSpreadsheet().toast(`Team sync failed: ${error.message}`, 'Error', 10);
-    Logger.log(`Team sync error: ${error.message}`);
+    SpreadsheetApp.getActiveSpreadsheet().toast(`Refresh failed: ${error.message}`, 'Error', 10);
+    Logger.log(`Team refresh error: ${error.message}`);
   }
 }
 

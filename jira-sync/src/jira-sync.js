@@ -33,12 +33,152 @@ function syncJiraIssues() {
 }
 
 /**
- * Sync function for team sheet - fetches all team issues to Jira-all sheet
+ * Refresh team sheet - pure read-only view of Jira data
+ * Clears and rebuilds the entire sheet from Jira each time
+ * Includes FIELD_CONFIG columns plus Jira's computed RICE Score
  */
-function syncTeamIssues() {
-  const sheetName = TEAM_SHEET_NAME;
-  const filterId = getTeamFilterId();
-  syncJiraIssuesCore(sheetName, filterId);
+function refreshTeamSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  try {
+    Logger.log('=== Refreshing Team Sheet ===');
+    
+    // Get or create the team sheet
+    let sheet = spreadsheet.getSheetByName(TEAM_SHEET_NAME);
+    let isNewSheet = false;
+    
+    if (!sheet) {
+      Logger.log('Creating new team sheet: %s', TEAM_SHEET_NAME);
+      sheet = spreadsheet.insertSheet(TEAM_SHEET_NAME);
+      isNewSheet = true;
+    }
+    
+    // Clear content but preserve formatting (column widths, etc.)
+    sheet.clearContents();
+    
+    // Build headers: FIELD_CONFIG headers + RICE Score
+    const headers = [...COLUMN_HEADERS, 'RICE Score'];
+    
+    // Build field list for Jira API: FIELD_CONFIG fields + RICE Score field
+    const fieldsToFetch = [...JIRA_FIELDS, JIRA_RICE_SCORE_FIELD];
+    
+    // Fetch issues from Jira
+    const filterId = getTeamFilterId();
+    spreadsheet.toast('Fetching issues from Jira...', 'Refresh Team Sheet', -1);
+    
+    const url = `${JIRA_BASE_URL}/rest/api/2/search?jql=filter=${filterId}&fields=${fieldsToFetch.join(',')}&maxResults=${MAX_RESULTS}`;
+    
+    const response = UrlFetchApp.fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${JIRA_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`Jira API error: ${response.getContentText()}`);
+    }
+    
+    const data = JSON.parse(response.getContentText());
+    const issues = data.issues || [];
+    
+    Logger.log('Fetched %s issues from Jira', issues.length);
+    
+    if (issues.length === 0) {
+      // Write headers only
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+      spreadsheet.toast('No issues found in filter.', 'Refresh Team Sheet', 5);
+      return;
+    }
+    
+    // Build rows
+    const rows = issues.map(issue => {
+      const row = FIELD_CONFIG.map(config => {
+        const value = config.field === 'key' ? issue.key : issue.fields[config.field];
+        return extractSimpleValueTeam(value);
+      });
+      // Add RICE Score
+      const riceScore = issue.fields[JIRA_RICE_SCORE_FIELD];
+      row.push(riceScore !== null && riceScore !== undefined ? riceScore : '');
+      return row;
+    });
+    
+    // Write headers
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    
+    // Write data
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    
+    // Make Key column into hyperlinks
+    for (let i = 0; i < rows.length; i++) {
+      const issueKey = rows[i][0];
+      const richText = SpreadsheetApp.newRichTextValue()
+        .setText(issueKey)
+        .setLinkUrl(`${JIRA_BASE_URL}/browse/${issueKey}`)
+        .build();
+      sheet.getRange(i + 2, 1).setRichTextValue(richText);
+    }
+    
+    // Apply formatting
+    // Shade Jira RICE columns (Jira Reach, Jira Impact, Jira Confidence, Jira Effort) with grey
+    const jiraReachColNum = headers.indexOf('Jira Reach') + 1;
+    const jiraImpactColNum = headers.indexOf('Jira Impact') + 1;
+    const jiraConfidenceColNum = headers.indexOf('Jira Confidence') + 1;
+    const jiraEffortColNum = headers.indexOf('Jira Effort') + 1;
+    const riceScoreColNum = headers.indexOf('RICE Score') + 1;
+    
+    if (jiraReachColNum > 0) {
+      sheet.getRange(1, jiraReachColNum, rows.length + 1).setBackground(COLORS.JIRA_READONLY);
+    }
+    if (jiraImpactColNum > 0) {
+      sheet.getRange(1, jiraImpactColNum, rows.length + 1).setBackground(COLORS.JIRA_READONLY);
+    }
+    if (jiraConfidenceColNum > 0) {
+      sheet.getRange(1, jiraConfidenceColNum, rows.length + 1).setBackground(COLORS.JIRA_READONLY);
+    }
+    if (jiraEffortColNum > 0) {
+      sheet.getRange(1, jiraEffortColNum, rows.length + 1).setBackground(COLORS.JIRA_READONLY);
+    }
+    if (riceScoreColNum > 0) {
+      sheet.getRange(1, riceScoreColNum, rows.length + 1).setBackground(COLORS.HEADER_SCORE);
+    }
+    
+    // Freeze header row and Key column
+    sheet.setFrozenRows(1);
+    sheet.setFrozenColumns(1);
+    
+    // Auto-resize columns only for new sheets
+    if (isNewSheet) {
+      sheet.autoResizeColumns(1, headers.length);
+    }
+    
+    Logger.log('=== Team Sheet Refresh Complete: %s issues ===', issues.length);
+    spreadsheet.toast(`Refreshed ${issues.length} issues.`, 'Refresh Team Sheet', 5);
+    
+  } catch (error) {
+    Logger.log('ERROR: Team sheet refresh failed: %s', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Simple value extraction for team sheet (same logic as main sync)
+ */
+function extractSimpleValueTeam(value) {
+  if (!value) return '';
+  
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value.displayName || value.name || value.value || value.emailAddress || '';
+  }
+  
+  if (Array.isArray(value)) {
+    return value.map(item => item.name || item).join(', ');
+  }
+  
+  return value.toString();
 }
 
 /**
@@ -352,12 +492,12 @@ function syncJiraIssuesCore(sheetName, filterId, skipConfirmation) {
           if (sizeValue && sizeValue !== '') {
             // Size exists: set Effort to Size, gray background, no dropdown
             effortCell.setValue(sizeValue);
-            effortCell.setBackground('#d9d9d9');
+            effortCell.setBackground(COLORS.EDITABLE_LOCKED);
             effortCell.setDataValidation(null);
             logDebug(' Row %s: Effort updated from Size (%s)', row, sizeValue);
           } else {
             // No Size: ensure yellow background and dropdown (in case Size was removed)
-            effortCell.setBackground('#ffff00');
+            effortCell.setBackground(COLORS.EDITABLE);
             if (effortRule) {
               effortCell.setDataValidation(effortRule);
             }
@@ -550,12 +690,12 @@ function applyRiceToRows(sheet, startRow, rowCount) {
     
     if (sizeValues[i] && sizeValues[i] !== '') {
       // Size exists: gray background, no dropdown (read-only appearance)
-      effortCell.setBackground('#d9d9d9');
+      effortCell.setBackground(COLORS.EDITABLE_LOCKED);
       effortCell.setDataValidation(null);  // Remove dropdown
       logDebug(' Row %s: Effort set from Size (%s), grayed out', row, sizeValues[i]);
     } else {
       // No Size: yellow background, add dropdown
-      effortCell.setBackground('#ffff00');
+      effortCell.setBackground(COLORS.EDITABLE);
       effortCell.setDataValidation(effortRule);
     }
   }
@@ -590,7 +730,7 @@ function applyRiceToRows(sheet, startRow, rowCount) {
   sheet.getRange(startRow, effortValColumn, rowCount).setFormula(effortValFormula);
   
   // Format Value columns with light blue background
-  sheet.getRange(startRow, reachValColumn, rowCount, 4).setBackground('#cfe2f3');
+  sheet.getRange(startRow, reachValColumn, rowCount, 4).setBackground(COLORS.VALUE_COLUMNS);
   
   // Setup PRICE Score formula: (R_val * I_val * C_val) / E_val
   // Note: P is already factored into R_val and I_val
@@ -627,17 +767,17 @@ function applyRiceToRows(sheet, startRow, rowCount) {
     // Add conditional formatting for Sync Status
     const syncRangeForRules = sheet.getRange(startRow, syncStatusColumn, rowCount);
     
-    // Very light blue for in-sync (✓)
+    // Light blue for in-sync (✓)
     const inSyncRule = SpreadsheetApp.newConditionalFormatRule()
       .whenTextEqualTo('✓')
-      .setBackground('#e8f4fd')  // Very light blue
+      .setBackground(COLORS.SYNC_IN_SYNC)
       .setRanges([syncRangeForRules])
       .build();
     
     // Very light red for out-of-sync (≠)
     const outOfSyncRule = SpreadsheetApp.newConditionalFormatRule()
       .whenTextEqualTo('≠')
-      .setBackground('#fce8e8')  // Very light red
+      .setBackground(COLORS.SYNC_OUT_OF_SYNC)
       .setRanges([syncRangeForRules])
       .build();
     
@@ -646,6 +786,12 @@ function applyRiceToRows(sheet, startRow, rowCount) {
     existingRules.push(inSyncRule);
     existingRules.push(outOfSyncRule);
     sheet.setConditionalFormatRules(existingRules);
+    
+    // Shade Jira RICE columns with light grey (read-only indicator)
+    sheet.getRange(startRow, jiraReachColNum, rowCount).setBackground(COLORS.JIRA_READONLY);
+    sheet.getRange(startRow, jiraImpactColNum, rowCount).setBackground(COLORS.JIRA_READONLY);
+    sheet.getRange(startRow, jiraConfidenceColNum, rowCount).setBackground(COLORS.JIRA_READONLY);
+    sheet.getRange(startRow, jiraEffortColNum, rowCount).setBackground(COLORS.JIRA_READONLY);
     
     logDebug(' Added Sync Status formula with conditional formatting for rows %s-%s', startRow, startRow + rowCount - 1);
   } else {
@@ -710,7 +856,7 @@ function applyRiceToRows(sheet, startRow, rowCount) {
       const priceStartColumn = JIRA_FIELDS.length + 1;
       const priceHeaders = ['PM', 'Reach', 'Impact', 'Confidence', 'Effort', 
                            'Reach (Value)', 'Impact (Value)', 'Confidence (Value)', 'Effort (Value)', 
-                           '(P)RICE Score', 'Sync Status'];
+                           'RICE Score', 'Sync Status'];
       
       // Add PRICE headers
       sheet.getRange(1, priceStartColumn, 1, priceHeaders.length).setValues([priceHeaders]);
@@ -719,22 +865,22 @@ function applyRiceToRows(sheet, startRow, rowCount) {
       // Format PRICE input headers (PM, Reach, Impact, Confidence, Effort) with yellow background
       sheet.getRange(1, priceStartColumn, 1, 5)
         .setFontWeight('bold')
-        .setBackground('#ffff00');
+        .setBackground(COLORS.EDITABLE);
       
       // Format Value headers with light blue background (read-only computed columns)
       sheet.getRange(1, priceStartColumn + 5, 1, 4)
         .setFontWeight('bold')
-        .setBackground('#cfe2f3');
+        .setBackground(COLORS.VALUE_COLUMNS);
       
       // Format Score header with light magenta orange background
       sheet.getRange(1, priceStartColumn + 9, 1, 1)
         .setFontWeight('bold')
-        .setBackground('#ffcc99');
+        .setBackground(COLORS.HEADER_SCORE);
       
       // Format Sync Status header with light gray background
       sheet.getRange(1, priceStartColumn + 10, 1, 1)
         .setFontWeight('bold')
-        .setBackground('#eeeeee');
+        .setBackground(COLORS.HEADER_SYNC_STATUS);
       
       // Note: PRICE dropdowns and formulas are applied after data is written
       // by applyRiceToRows() in syncJiraIssues()
@@ -789,6 +935,18 @@ function fetchJiraIssuesWithFilter(filterId) {
     // Use the configured column headers from config.js
     sheet.getRange(1, 1, 1, COLUMN_HEADERS.length).setValues([COLUMN_HEADERS]);
     sheet.getRange(1, 1, 1, COLUMN_HEADERS.length).setFontWeight('bold');
+    
+    // Shade Jira RICE column headers with grey (read-only indicator)
+    const jiraReachColNum = COLUMN_HEADERS.indexOf('Jira Reach') + 1;
+    const jiraImpactColNum = COLUMN_HEADERS.indexOf('Jira Impact') + 1;
+    const jiraConfidenceColNum = COLUMN_HEADERS.indexOf('Jira Confidence') + 1;
+    const jiraEffortColNum = COLUMN_HEADERS.indexOf('Jira Effort') + 1;
+    
+    if (jiraReachColNum > 0) sheet.getRange(1, jiraReachColNum).setBackground(COLORS.JIRA_READONLY);
+    if (jiraImpactColNum > 0) sheet.getRange(1, jiraImpactColNum).setBackground(COLORS.JIRA_READONLY);
+    if (jiraConfidenceColNum > 0) sheet.getRange(1, jiraConfidenceColNum).setBackground(COLORS.JIRA_READONLY);
+    if (jiraEffortColNum > 0) sheet.getRange(1, jiraEffortColNum).setBackground(COLORS.JIRA_READONLY);
+    
     // Note: Freeze panes are now handled in initializeNewSheet() for new sheets
   }
   
