@@ -391,6 +391,7 @@ function applyRiceToRows(sheet, startRow, rowCount) {
   // Confidence (Value) = XLOOKUP(Confidence, mapping) * Confidence_Weight (no P multiplier)
   const confidenceValFormula = `=XLOOKUP(${confidenceCol}${startRow},INDEX(Confidence_Mapping,,1),INDEX(Confidence_Mapping,,2))*Confidence_Weight`;
   sheet.getRange(startRow, confidenceValColumn, rowCount).setFormula(confidenceValFormula);
+  sheet.getRange(startRow, confidenceValColumn, rowCount).setNumberFormat('0%');
   
   // Effort (Value) = XLOOKUP(Effort, mapping) * Effort_Weight (no P multiplier)
   const effortValFormula = `=XLOOKUP(${effortCol}${startRow},INDEX(Effort_Mapping,,1),INDEX(Effort_Mapping,,2))*Effort_Weight`;
@@ -406,6 +407,58 @@ function applyRiceToRows(sheet, startRow, rowCount) {
   const scoreRange = sheet.getRange(startRow, scoreColumn, rowCount);
   scoreRange.setFormula(scoreFormula);
   scoreRange.setNumberFormat('0.00');
+  
+  // Setup Sync Status formula - compare sheet RICE values with Jira RICE values
+  const syncStatusColumn = scoreColumn + 1;
+  
+  // Find Jira column positions by header name
+  const jiraReachColNum = COLUMN_HEADERS.indexOf('Jira Reach') + 1;
+  const jiraImpactColNum = COLUMN_HEADERS.indexOf('Jira Impact') + 1;
+  const jiraConfidenceColNum = COLUMN_HEADERS.indexOf('Jira Confidence') + 1;
+  const jiraEffortColNum = COLUMN_HEADERS.indexOf('Jira Effort') + 1;
+  
+  // Only add Sync Status if all Jira columns exist
+  if (jiraReachColNum > 0 && jiraImpactColNum > 0 && jiraConfidenceColNum > 0 && jiraEffortColNum > 0) {
+    const jiraReachCol = columnToLetter(jiraReachColNum);
+    const jiraImpactCol = columnToLetter(jiraImpactColNum);
+    const jiraConfidenceCol = columnToLetter(jiraConfidenceColNum);
+    const jiraEffortCol = columnToLetter(jiraEffortColNum);
+    
+    // Sync Status formula: compare Value columns with Jira columns
+    // Confidence: convert Value (numeric) to Jira string via XLOOKUP, then compare with Jira Confidence
+    const syncStatusFormula = `=IF(AND(${reachValCol}${startRow}=${jiraReachCol}${startRow},${impactValCol}${startRow}=${jiraImpactCol}${startRow},XLOOKUP(${confidenceValCol}${startRow},INDEX(Confidence_Mapping,,2),INDEX(Confidence_Mapping,,3))=${jiraConfidenceCol}${startRow},${effortValCol}${startRow}=${jiraEffortCol}${startRow}),"✓","≠")`;
+    
+    const syncStatusRange = sheet.getRange(startRow, syncStatusColumn, rowCount);
+    syncStatusRange.setFormula(syncStatusFormula);
+    syncStatusRange.setHorizontalAlignment('center');
+    
+    // Add conditional formatting for Sync Status
+    const syncRangeForRules = sheet.getRange(startRow, syncStatusColumn, rowCount);
+    
+    // Very light blue for in-sync (✓)
+    const inSyncRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('✓')
+      .setBackground('#e8f4fd')  // Very light blue
+      .setRanges([syncRangeForRules])
+      .build();
+    
+    // Very light red for out-of-sync (≠)
+    const outOfSyncRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('≠')
+      .setBackground('#fce8e8')  // Very light red
+      .setRanges([syncRangeForRules])
+      .build();
+    
+    // Get existing rules and add new ones
+    const existingRules = sheet.getConditionalFormatRules();
+    existingRules.push(inSyncRule);
+    existingRules.push(outOfSyncRule);
+    sheet.setConditionalFormatRules(existingRules);
+    
+    logDebug(' Added Sync Status formula with conditional formatting for rows %s-%s', startRow, startRow + rowCount - 1);
+  } else {
+    logDebug(' Skipping Sync Status - Jira RICE columns not found in FIELD_CONFIG');
+  }
   
   logDebug(' Applied PRICE (defaults, dropdowns, formulas) to rows %s-%s', startRow, startRow + rowCount - 1);
 }
@@ -465,13 +518,13 @@ function applyRiceToRows(sheet, startRow, rowCount) {
       const priceStartColumn = JIRA_FIELDS.length + 1;
       const priceHeaders = ['PM', 'Reach', 'Impact', 'Confidence', 'Effort', 
                            'Reach (Value)', 'Impact (Value)', 'Confidence (Value)', 'Effort (Value)', 
-                           '(P)RICE Score'];
+                           '(P)RICE Score', 'Sync Status'];
       
       // Add PRICE headers
       sheet.getRange(1, priceStartColumn, 1, priceHeaders.length).setValues([priceHeaders]);
       Logger.log('Added PRICE headers: %s', priceHeaders.join(', '));
       
-      // Format PRICE input headers (P, Reach, Impact, Confidence, Effort) with yellow background
+      // Format PRICE input headers (PM, Reach, Impact, Confidence, Effort) with yellow background
       sheet.getRange(1, priceStartColumn, 1, 5)
         .setFontWeight('bold')
         .setBackground('#ffff00');
@@ -481,10 +534,15 @@ function applyRiceToRows(sheet, startRow, rowCount) {
         .setFontWeight('bold')
         .setBackground('#cfe2f3');
       
-      // Format Score header with light magenta orange background (at the end)
+      // Format Score header with light magenta orange background
       sheet.getRange(1, priceStartColumn + 9, 1, 1)
         .setFontWeight('bold')
         .setBackground('#ffcc99');
+      
+      // Format Sync Status header with light gray background
+      sheet.getRange(1, priceStartColumn + 10, 1, 1)
+        .setFontWeight('bold')
+        .setBackground('#eeeeee');
       
       // Note: PRICE dropdowns and formulas are applied after data is written
       // by applyRiceToRows() in syncJiraIssues()
