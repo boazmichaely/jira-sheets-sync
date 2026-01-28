@@ -123,22 +123,22 @@ function testConfigConstants() {
     
     // Step 1: Check each constant individually
     const jiraBaseUrl = typeof JIRA_BASE_URL !== 'undefined' ? JIRA_BASE_URL : 'UNDEFINED';
-    const filterId = typeof FILTER_ID !== 'undefined' ? FILTER_ID : 'UNDEFINED';
     const sheetBaseName = typeof SHEET_BASE_NAME !== 'undefined' ? SHEET_BASE_NAME : 'UNDEFINED';
     const maxResults = typeof MAX_RESULTS !== 'undefined' ? MAX_RESULTS : 'UNDEFINED';
+    const teamSheetName = typeof TEAM_SHEET_NAME !== 'undefined' ? TEAM_SHEET_NAME : 'UNDEFINED';
     
     // Step 2: Log each constant
     Logger.log('JIRA_BASE_URL: %s', jiraBaseUrl);
-    Logger.log('FILTER_ID: %s', filterId);
     Logger.log('SHEET_BASE_NAME: %s', sheetBaseName);
     Logger.log('MAX_RESULTS: %s', maxResults);
+    Logger.log('TEAM_SHEET_NAME: %s', teamSheetName);
     
     // Step 3: Build constants object
     const constants = {
       JIRA_BASE_URL: jiraBaseUrl,
-      FILTER_ID: filterId,
       SHEET_BASE_NAME: sheetBaseName,
-      MAX_RESULTS: maxResults
+      MAX_RESULTS: maxResults,
+      TEAM_SHEET_NAME: teamSheetName
     };
     
     // Step 4: Check for missing constants
@@ -154,11 +154,7 @@ function testConfigConstants() {
     const result = {
       success: allConstantsFound,
       constants: constants,
-      missingConstants: missingConstants,
-      jiraBaseUrl: jiraBaseUrl,
-      filterId: filterId,
-      sheetBaseName: sheetBaseName,
-      maxResults: maxResults
+      missingConstants: missingConstants
     };
     
     if (!allConstantsFound) {
@@ -182,94 +178,58 @@ function testConfigConstants() {
 }
 
 /**
- * Test 4: Test getCurrentConfig function
+ * Test 4: Test user filter lookup
  */
-function testGetCurrentConfig() {
+function testUserFilterLookup() {
   try {
-    Logger.log('=== TEST 4: Get Current Config ===');
+    Logger.log('=== TEST 4: User Filter Lookup ===');
     
-    // Step 1: Check if function exists
-    const functionExists = typeof getCurrentConfig === 'function';
-    Logger.log('getCurrentConfig function exists: %s', functionExists);
-    
-    if (!functionExists) {
-      const errorMsg = 'getCurrentConfig function not found - check if menu-functions.js is loaded';
-      throw new Error(errorMsg);
-    }
-    
-    // Step 2: Try to call the function step by step
-    let config = null;
-    let configError = null;
-    let partialConfig = {};
-    
+    // Step 1: Get username
+    let userName = null;
     try {
-      // Try to build config manually to see which part fails
-      const filterId = FILTER_ID;
-      const maxResults = MAX_RESULTS;
-      const baseUrl = JIRA_BASE_URL;
-      
-      partialConfig.filterId = filterId;
-      partialConfig.maxResults = maxResults;
-      partialConfig.baseUrl = baseUrl;
-      
-      Logger.log('Partial config (constants): %s', JSON.stringify(partialConfig));
-      
-      // Now try the problematic parts
-      let sheetName = null;
-      let userName = null;
-      
-      try {
-        sheetName = getUserSheetName();
-      } catch (e) {
-        sheetName = 'ERROR: ' + e.message;
-      }
-      
-      try {
-        userName = Session.getActiveUser().getUsername();
-      } catch (e) {
-        userName = 'ERROR: ' + e.message;
-      }
-      
-      partialConfig.sheetName = sheetName;
-      partialConfig.userName = userName;
-      
-      Logger.log('Sheet name result: %s', sheetName);
-      Logger.log('User name result: %s', userName);
-      
-      // Now try the full function
-      config = getCurrentConfig();
-      
+      userName = getCurrentUsername();
+      Logger.log('Current username: %s', userName);
     } catch (e) {
-      configError = e.message;
+      Logger.log('Error getting username: %s', e.message);
+      throw e;
     }
     
-    Logger.log('Config result: %s', JSON.stringify(config));
-    Logger.log('Config error: %s', configError);
-    Logger.log('Partial config built: %s', JSON.stringify(partialConfig));
+    // Step 2: Get filter ID
+    let filterId = null;
+    try {
+      filterId = getUserFilterId();
+      Logger.log('User filter ID: %s', filterId);
+    } catch (e) {
+      Logger.log('Error getting filter ID: %s', e.message);
+      throw e;
+    }
     
-    // Step 3: Return results
-    const result = {
-      success: config !== null && !configError,
-      config: config,
-      error: configError,
-      functionExists: functionExists,
-      partialConfig: partialConfig,
-      sheetName: partialConfig.sheetName,
-      userName: partialConfig.userName
+    // Step 3: Get sheet name
+    let sheetName = null;
+    try {
+      sheetName = getUserSheetName();
+      Logger.log('User sheet name: %s', sheetName);
+    } catch (e) {
+      Logger.log('Error getting sheet name: %s', e.message);
+      throw e;
+    }
+    
+    Logger.log('✅ User filter lookup successful');
+    
+    return {
+      success: true,
+      userName: userName,
+      filterId: filterId,
+      sheetName: sheetName
     };
-    
-    return result;
     
   } catch (error) {
     const errorMessage = error.message;
-    const errorStack = error.stack;
     Logger.log('❌ TEST 4 FAILED: %s', errorMessage);
-    Logger.log('Error stack: %s', errorStack);
     
     return {
       success: false,
-      error: errorMessage,
-      stack: errorStack
+      error: errorMessage
     };
   }
 }
@@ -340,7 +300,7 @@ function runAllTests() {
     test1: testGetUser(),
     test2: testGetUserSheetName(),
     test3: testConfigConstants(),
-    test4: testGetCurrentConfig(),
+    test4: testUserFilterLookup(),
     test5: testSpreadsheetAccess(),
     test6: testUIAccess()
   };
@@ -362,19 +322,17 @@ function runAllTests() {
 }
 
 /**
- * Simplified config test without getUserSheetName
+ * Simplified config test without user functions
  */
 function testSimpleConfig() {
   try {
     Logger.log('=== TEST: Simple Config (no user functions) ===');
     
     const config = {
-      filterId: FILTER_ID,
       maxResults: MAX_RESULTS,
       baseUrl: JIRA_BASE_URL,
-      // Skip user-dependent functions for now
-      sheetName: 'TEST-SHEET',
-      userName: 'TEST-USER'
+      teamSheetName: TEAM_SHEET_NAME,
+      sheetBaseName: SHEET_BASE_NAME
     };
     
     Logger.log('✅ Simple config works: %s', JSON.stringify(config, null, 2));

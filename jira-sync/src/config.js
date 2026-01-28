@@ -18,6 +18,14 @@ const TEAM_SHEET_NAME = 'Jira-all';
 const TEAM_USER_KEY = 'definition';  // Key in User_Mapping for team filter
 const JIRA_RICE_SCORE_FIELD = 'customfield_12326242';  // Jira's computed RICE Score
 
+// === RICE FIELD IDS (for writing to Jira) ===
+const RICE_FIELD_IDS = {
+  reach: 'customfield_12320846',
+  impact: 'customfield_12320740',
+  confidence: 'customfield_12320847',
+  effort: 'customfield_12320848'
+};
+
 // === FIELD CONFIGURATION ===
 // Each field defines both the Jira field name and the display header
 // Custom prioritization columns (Reach, Impact, Confidence, Effort, Score) go after these
@@ -33,10 +41,9 @@ const FIELD_CONFIG = [
   { field: 'customfield_12316752',  header: 'Product Manager' },
   { field: 'assignee',              header: 'Assignee' },
   { field: 'customfield_12313240',  header: 'Team' },
-  { field: 'customfield_12311940',  header: 'Rank' },
   { field: 'reporter',              header: 'Reporter' },
-  { field: 'assignee',              header: 'Assignee' },
   { field: 'customfield_12319940',  header: 'Target Version' },
+  { field: 'customfield_12311940',  header: 'Rank' },
   { field: 'customfield_12320852',  header: 'Size' },
   { field: 'customfield_12320846',  header: 'Jira Reach' },
   { field: 'customfield_12320740',  header: 'Jira Impact' },

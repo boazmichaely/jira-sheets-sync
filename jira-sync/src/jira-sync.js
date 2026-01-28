@@ -93,11 +93,19 @@ function refreshTeamSheet() {
       return;
     }
     
-    // Build rows
-    const rows = issues.map(issue => {
+    // Build rows - convert LexoRank to position number
+    const rows = issues.map((issue, index) => {
+      const rank = index + 1;  // Position in results (1, 2, 3...)
       const row = FIELD_CONFIG.map(config => {
-        const value = config.field === 'key' ? issue.key : issue.fields[config.field];
-        return extractSimpleValueTeam(value);
+        if (config.field === 'key') {
+          return issue.key;
+        } else if (config.field === 'customfield_12311940') {
+          // Replace LexoRank with position number
+          return rank;
+        } else {
+          const value = issue.fields[config.field];
+          return extractSimpleValue(value);
+        }
       });
       // Add RICE Score
       const riceScore = issue.fields[JIRA_RICE_SCORE_FIELD];
@@ -129,6 +137,7 @@ function refreshTeamSheet() {
     const jiraConfidenceColNum = headers.indexOf('Jira Confidence') + 1;
     const jiraEffortColNum = headers.indexOf('Jira Effort') + 1;
     const riceScoreColNum = headers.indexOf('RICE Score') + 1;
+    const rankColNum = headers.indexOf('Rank') + 1;
     
     if (jiraReachColNum > 0) {
       sheet.getRange(1, jiraReachColNum, rows.length + 1).setBackground(COLORS.JIRA_READONLY);
@@ -144,6 +153,9 @@ function refreshTeamSheet() {
     }
     if (riceScoreColNum > 0) {
       sheet.getRange(1, riceScoreColNum, rows.length + 1).setBackground(COLORS.HEADER_SCORE);
+    }
+    if (rankColNum > 0) {
+      sheet.getRange(1, rankColNum, rows.length + 1).setBackground(COLORS.HEADER_SCORE);
     }
     
     // Freeze header row and Key column
@@ -165,23 +177,6 @@ function refreshTeamSheet() {
 }
 
 /**
- * Simple value extraction for team sheet (same logic as main sync)
- */
-function extractSimpleValueTeam(value) {
-  if (!value) return '';
-  
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    return value.displayName || value.name || value.value || value.emailAddress || '';
-  }
-  
-  if (Array.isArray(value)) {
-    return value.map(item => item.name || item).join(', ');
-  }
-  
-  return value.toString();
-}
-
-/**
  * Push RICE values from sheet to Jira for out-of-sync issues
  * Only pushes rows where Sync Status = "≠"
  */
@@ -189,14 +184,6 @@ function pushRiceToJira() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = spreadsheet.getActiveSheet();
   const ui = SpreadsheetApp.getUi();
-  
-  // RICE field IDs in Jira
-  const RICE_FIELD_IDS = {
-    reach: 'customfield_12320846',
-    impact: 'customfield_12320740',
-    confidence: 'customfield_12320847',
-    effort: 'customfield_12320848'
-  };
   
   try {
     Logger.log('=== Push RICE to Jira ===');
@@ -533,6 +520,14 @@ function syncJiraIssuesCore(sheetName, filterId, skipConfirmation) {
     logDebug(' Step 8 - Ensuring headers...');
     writeHeaders(sheet);
     
+    // Step 9: Shade Rank column for all data rows
+    const rankColNum = COLUMN_HEADERS.indexOf('Rank') + 1;
+    const lastDataRow = sheet.getLastRow();
+    if (rankColNum > 0 && lastDataRow > 1) {
+      sheet.getRange(2, rankColNum, lastDataRow - 1).setBackground(COLORS.HEADER_SCORE);
+      logDebug(' Shaded Rank column for rows 2-%s', lastDataRow);
+    }
+    
     Logger.log('=== Sync Complete: %s updated, %s added, %s deleted ===', 
                toUpdate.length, toAdd.length, toDelete.length);
     
@@ -798,6 +793,8 @@ function applyRiceToRows(sheet, startRow, rowCount) {
     logDebug(' Skipping Sync Status - Jira RICE columns not found in FIELD_CONFIG');
   }
   
+  // Note: Rank column shading is applied in syncJiraIssuesCore Step 9 for all rows
+  
   logDebug(' Applied PRICE (defaults, dropdowns, formulas) to rows %s-%s', startRow, startRow + rowCount - 1);
 }
   
@@ -894,15 +891,6 @@ function applyRiceToRows(sheet, startRow, rowCount) {
   }
   
   /**
-* Fetch issues from Jira ordered by Rank ASC
-* Uses the current user's filter ID from User_Mapping
-*/
-function fetchJiraIssues() {
-  const filterId = getUserFilterId();
-  return fetchJiraIssuesWithFilter(filterId);
-}
-
-/**
 * Fetch issues from Jira ordered by Rank ASC with specified filter
 * @param {string} filterId - Jira filter ID to use
 */
@@ -946,6 +934,10 @@ function fetchJiraIssuesWithFilter(filterId) {
     if (jiraImpactColNum > 0) sheet.getRange(1, jiraImpactColNum).setBackground(COLORS.JIRA_READONLY);
     if (jiraConfidenceColNum > 0) sheet.getRange(1, jiraConfidenceColNum).setBackground(COLORS.JIRA_READONLY);
     if (jiraEffortColNum > 0) sheet.getRange(1, jiraEffortColNum).setBackground(COLORS.JIRA_READONLY);
+    
+    // Shade Rank column header with orange
+    const rankColNum = COLUMN_HEADERS.indexOf('Rank') + 1;
+    if (rankColNum > 0) sheet.getRange(1, rankColNum).setBackground(COLORS.HEADER_SCORE);
     
     // Note: Freeze panes are now handled in initializeNewSheet() for new sheets
   }
